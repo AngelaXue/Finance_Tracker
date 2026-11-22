@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Finance Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    // Money everywhere in JS: 1,234,567.80 — x.toLocaleString(undefined, MONEY_DIGITS)
+    const MONEY_DIGITS = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+    // The reporting currency's symbol (src/fx.py BASE_CURRENCY), for chart labels
+    const MONEY_SYMBOL = {{ BASE_SYMBOL|tojson }};
+  </script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-brand">Finance Tracker</div>
+      {% if DEMO %}<div class="demo-badge" title="Started with --demo: fake data in data/demo.db. Your real data is untouched.">Demo data</div>{% endif %}
+      <ul class="sidebar-nav">
+        <li><a href="{{ url_for('overview') }}" class="{{ 'active' if request.endpoint == 'overview' }}">Overview</a></li>
+        <li><a href="{{ url_for('net_worth') }}" class="{{ 'active' if request.endpoint == 'net_worth' }}">Net Worth</a></li>
+        <li><a href="{{ url_for('cash_flow') }}" class="{{ 'active' if request.endpoint == 'cash_flow' }}">Cash Flow</a></li>
+        <li><a href="{{ url_for('spending') }}" class="{{ 'active' if request.endpoint == 'spending' }}">Spending</a></li>
+        <li><a href="{{ url_for('transactions') }}" class="{{ 'active' if request.endpoint == 'transactions' }}">Transactions</a></li>
+        <li><a href="{{ url_for('import_page') }}" class="{{ 'active' if request.endpoint == 'import_page' }}">Import</a></li>
+        <li><a href="{{ url_for('investments') }}" class="{{ 'active' if request.endpoint == 'investments' }}">Investments</a></li>
+        <li><a href="{{ url_for('ious') }}" class="{{ 'active' if request.endpoint == 'ious' }}">IOUs</a></li>
+      </ul>
+      <ul class="sidebar-nav sidebar-nav-footer">
+        <li><a href="{{ url_for('help_page') }}" class="{{ 'active' if request.endpoint == 'help_page' }}">Help</a></li>
+      </ul>
+    </nav>
+    <main class="content">
+      {% if DEMO %}
+      <div class="demo-banner">You're looking at <strong>demo data</strong> — nothing here is real, and your own data
+        isn't touched. Restart with <span class="field-code">python app.py</span> (no <span class="field-code">--demo</span>)
+        to use your own.</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

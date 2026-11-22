@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Cash Flow · Finance Tracker{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.12.0/dist/chartjs-chart-sankey.min.js"></script>
+{% endblock %}
+{% block content %}
+<h1>Cash Flow</h1>
+
+{% include "_period_selector.html" %}
+
+<div class="grid-4">
+  <div class="stat-card">
+    <div class="stat-label">Inflow</div>
+    <div class="stat-value">{{ fmt_money(sankey.income_total) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Living Expenses</div>
+    <div class="stat-value">{{ fmt_money(living_expenses) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Saved + Invested</div>
+    <div class="stat-value">{{ fmt_money(saved_invested) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Savings Rate</div>
+    <div class="stat-value">{{ "%.1f"|format(savings_rate) }}%</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>{{ period.label }}</h2>
+  <canvas id="sankeyChart" height="140"></canvas>
+  <p class="caption">Transfers between your own accounts (checking → savings, credit card payoffs) and personal transfers are excluded from this diagram.</p>
+  <div class="caption cash-flow-notes">
+    <p><strong>Living Expenses</strong> is everything with Type <span class="field-code">expense</span> in this
+      period, converted to {{ BASE_CURRENCY }}. Only Type matters, not Category.</p>
+    <ul class="ledger-tips">
+      <li>Includes every account — accounts someone else pays for too.</li>
+      <li>Leaves out rows marked Not Mine, transfers between your own accounts, and personal transfers.</li>
+      <li>Investment contributions show separately as <strong>Investing</strong>; manual IOU entries where someone
+        paid for something of yours as <strong>Paid by Others</strong>.</li>
+      <li>Pass-through rows typed as <span class="field-code">expense</span> are counted here (the Spending page
+        hides them by default).</li>
+    </ul>
+    <p>For the breakdown by category, see <a href="{{ url_for('spending', period=period.preset, start=period.start, end=period.end) }}">Spending</a>.</p>
+  </div>
+</div>
+
+<script>
+const PASTEL = {{ PASTEL_COLORS|tojson }};
+const sankeyLinks = {{ sankey.links|tojson }};
+if (sankeyLinks.length) {
+  const nodeColor = (label) => PASTEL[Math.abs([...label].reduce((h, c) => h + c.charCodeAt(0), 0)) % PASTEL.length];
+  new Chart(document.getElementById('sankeyChart'), {
+    type: 'sankey',
+    data: {
+      datasets: [{
+        data: sankeyLinks.map(l => ({ from: l.from, to: l.to, flow: l.flow, pct: l.pct })),
+        colorFrom: (ctx) => nodeColor(ctx.dataset.data[ctx.dataIndex].from),
+        colorTo: (ctx) => nodeColor(ctx.dataset.data[ctx.dataIndex].to),
+      }],
+    },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const { from, to, flow, pct } = ctx.raw;
+              return `${from} → ${to}: ${MONEY_SYMBOL}${flow.toLocaleString(undefined, MONEY_DIGITS)} (${pct.toFixed(1)}% of income)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+</script>
+{% endblock %}

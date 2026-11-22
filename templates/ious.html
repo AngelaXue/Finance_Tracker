@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}IOUs · Finance Tracker{% endblock %}
+{% block content %}
+<h1>IOUs</h1>
+<p class="caption">Money between you and other people — a parent who pays one of your cards, a roommate splitting
+  bills, a friend you lent cash to. Each person has one running balance. Most entries come from your transactions
+  (mark them with the <strong>IOU…</strong> menu on Transactions); add anything else below.
+  <a href="{{ url_for('help_page') }}#ious">How this works</a></p>
+
+{% macro balance_text(balance) -%}
+  {% if balance > 0.004 %}<span class="amount-negative-text">You owe {{ fmt_money(balance) }}</span>
+  {% elif balance < -0.004 %}<span class="amount-positive-text">Owes you {{ fmt_money(-balance) }}</span>
+  {% else %}<span class="caption">Settled up</span>{% endif %}
+{%- endmacro %}
+
+{% if ledgers %}
+<div class="iou-people">
+  {% for l in ledgers %}
+  <a href="{{ url_for('ious', person=l.person) }}" class="stat-card iou-person-card {{ 'active' if selected and selected.person == l.person }}">
+    <div class="stat-label">{{ l.person }}</div>
+    <div class="iou-person-balance">{{ balance_text(l.balance) }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% macro entry_cell(e) %}
+  {% if e.source == 'transaction' %}
+  <a href="{{ url_for('transactions', period='custom', start=e.date, end=e.date, iou='any') }}" class="row-link">{{ e.description or '(no description)' }}</a>
+  {% else %}{{ e.description }}{% endif %}
+  <div class="caption ledger-from">
+    {{ e.account_name or 'Manual entry' }}{% if e.reason == 'account' %} · auto{% endif %}
+  </div>
+{% endmacro %}
+
+{% macro panel(title, hint, entries, total, marks, amount_class) %}
+<div class="card table-card" data-ledger-panel>
+  <div class="ledger-panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <div class="caption">{{ hint }}</div>
+      <div class="caption">
+        <span class="iou-badge settle-badge-pending">Pending</span> {{ fmt_money(marks.pending) }}
+        · <span class="iou-badge settle-badge-settled">Settled</span> {{ fmt_money(marks.settled) }}
+        · Unmarked {{ fmt_money(marks.unmarked) }}
+      </div>
+    </div>
+    <div class="ledger-actions">
+      <button class="btn btn-secondary" data-ledger-settle="settled" disabled
+              title="Reminder only — you've squared this up. Doesn't change the balance.">Mark Settled</button>
+      <button class="btn btn-secondary" data-ledger-settle="pending" disabled
+              title="Reminder only — still to be squared up.">Mark Pending</button>
+      <button class="btn btn-secondary" data-ledger-settle="" disabled title="Remove the mark">Clear</button>
+      <button class="btn btn-secondary" data-ledger-delete-btn disabled
+              title="Deletes selected manual entries only — change a transaction from the Transactions page.">Delete</button>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th><input type="checkbox" data-ledger-select-all title="Select all"></th>
+        <th>Date</th><th>Description</th><th class="num">Amount</th><th>Status</th>
+      </tr>
+      {% for e in entries %}
+      <tr class="{{ 'ledger-starting-balance' if e.kind == 'starting_balance' }} {{ 'ledger-settled' if e.settlement == 'settled' }}">
+        <td><input type="checkbox" data-ledger-item data-source="{{ e.source }}" data-id="{{ e.id }}" title="Select this entry"></td>
+        <td class="ledger-date">{{ e.date }}</td>
+        <td>{% if e.kind == 'starting_balance' %}<strong>Starting balance</strong> — {% endif %}{{ entry_cell(e) }}</td>
+        <td class="num {{ amount_class }}">{{ fmt_num(e.amount) }}</td>
+        <td>
+          {% if e.settlement == 'settled' %}<span class="iou-badge settle-badge-settled">Settled</span>
+          {% elif e.settlement == 'pending' %}<span class="iou-badge settle-badge-pending">Pending</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="caption">Nothing here yet.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  <div class="table-summary">
+    <span>{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }}</span>
+    <span>Total: <strong>{{ fmt_money(total) }}</strong></span>
+  </div>
+</div>
+{% endmacro %}
+
+{% if selected %}
+<div class="card iou-summary">
+  <h2>{{ selected.person }}</h2>
+  <div class="stat-value">{{ balance_text(selected.balance) }}</div>
+  <p class="caption">= what they paid ({{ fmt_money(selected.they_paid_total) }}) − what you paid
+    ({{ fmt_money(selected.i_paid_total) }}){% if selected.starting_balance_date %}, counting from the starting
+    balance on {{ selected.starting_balance_date }}{% endif %}. In {{ BASE_CURRENCY }}.</p>
+</div>
+
+<div class="ledger-split">
+  {{ panel('They paid', 'Paid for you, lent you money, or paid you back', selected.they_paid,
+           selected.they_paid_total, selected.they_paid_marks, 'amount-negative') }}
+  {{ panel('I paid', 'You paid them back, lent them money, or paid for them', selected.i_paid,
+           selected.i_paid_total, selected.i_paid_marks, 'amount-positive') }}
+</div>
+{% if selected.replaced_count %}
+<p class="caption">{{ selected.replaced_count }} older entr{{ 'y is' if selected.replaced_count == 1 else 'ies are' }}
+  hidden — replaced by the starting balance on {{ selected.starting_balance_date }}.</p>
+{% endif %}
+{% else %}
+<div class="card">
+  <h2>No IOUs yet</h2>
+  <ul class="caption ledger-tips">
+    <li><strong>Someone pays one of your cards?</strong> Set that account to "Someone else pays it" on
+      <a href="{{ url_for('net_worth') }}#add-account">Net Worth</a> — its spending then shows up here by itself.</li>
+    <li><strong>Paid someone back, or got paid back?</strong> On Transactions, tick the row and pick from the
+      <strong>IOU…</strong> menu, with the person's name.</li>
+    <li><strong>No transaction behind it</strong> (cash, or they paid directly)? Add it below.</li>
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Add an entry</h2>
+  <form class="filters" data-ledger-add-form>
+    <input type="text" name="person" placeholder="Person" list="iou-people" required autocomplete="off"
+           value="{{ selected.person if selected else '' }}" style="min-width:140px">
+    <input type="date" name="date" required>
+    <input type="text" name="description" placeholder="Description" style="min-width:220px">
+    <select name="direction">
+      <option value="they_paid">They paid (you owe them more)</option>
+      <option value="i_paid">I paid (they owe you more / you paid them back)</option>
+      <option value="starting_balance">Starting balance</option>
+    </select>
+    <input type="text" name="amount" placeholder="Amount ({{ BASE_CURRENCY }})" required style="min-width:110px"
+           autocomplete="off" inputmode="decimal">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+  <datalist id="iou-people">{% for p in people %}<option value="{{ p }}">{% endfor %}</datalist>
+  <ul class="caption ledger-tips">
+    <li>Only for things with <strong>no transaction</strong> behind them (cash, or someone paid a bill directly). If
+      it's a transaction, mark it on Transactions instead, so it isn't counted twice.</li>
+    <li><strong>Starting balance</strong> = "as of this date, the balance was exactly this much" — positive if you
+      owed them, negative if they owed you, 0 if you were square. It replaces everything for that person on or
+      before that date, so you don't have to enter old history.</li>
+  </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+{% block title %}Investments · Finance Tracker{% endblock %}
+{% block content %}
+{% from "_macros.html" import period_selector with context %}
+{% from "_cd_table.html" import cd_table with context %}
+<h1>Investments</h1>
+
+{{ period_selector(period, [('all','All'), ('3mo','3M'), ('6mo','6M'), ('1yr','1Y'), ('5yr','5Y')], '', min_date|default('')) }}
+
+{# Same four cards for the overall total and for every account #}
+{% macro stat_cards(s) -%}
+<div class="grid-4 inv-cards">
+  <div class="stat-card">
+    <div class="stat-label">Current Value</div>
+    <div class="stat-value">{{ fmt_money(s.current_value) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Principal</div>
+    <div class="stat-value">{{ fmt_money(s.principal) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Growth</div>
+    <div class="stat-value {{ 'delta-positive' if s.growth >= 0 else 'delta-negative' }}">{{ '+' if s.growth > 0 }}{{ fmt_money(s.growth) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Growth %</div>
+    {% if s.growth_pct is none %}
+    <div class="stat-value">—</div>
+    {% else %}
+    <div class="stat-value {{ 'delta-positive' if s.growth_pct >= 0 else 'delta-negative' }}">{{ '+' if s.growth_pct > 0 }}{{ "%.1f"|format(s.growth_pct) }}%</div>
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{# Which-account dropdown (needs-a-look list + All entries). Changes are
+   staged; the table's own Save changes / Discard commits them. #}
+{% macro assign_select(c, placeholder) -%}
+<select class="inv-assign" data-inv-assign="{{ c.id }}" title="Which account this went to">
+  <option value="" selected>{{ placeholder }}</option>
+  {% for s in sections %}<option value="{{ s.id }}">→ {{ s.name }}</option>{% endfor %}
+  <option value="none">Not an investment</option>
+  {% if c.override %}<option value="auto">Automatic (from note/description)</option>{% endif %}
+</select>
+{%- endmacro %}
+
+{% macro assign_controls() -%}
+<div class="save-controls inv-assign-controls">
+  <span class="caption" data-inv-assign-count></span>
+  <button class="btn btn-secondary" data-inv-assign-discard disabled>Discard</button>
+  <button class="btn btn-primary" data-inv-assign-save disabled>Save changes</button>
+</div>
+{%- endmacro %}
+
+<section class="inv-panel">
+  <div class="inv-panel-header"><h2>Overview</h2><span class="caption">all accounts</span></div>
+  {{ stat_cards(summary) }}
+  <div class="card">
+    <h2>Principal vs. Total Value — {{ period.label }}</h2>
+    {% if trend %}
+    <canvas data-inv-chart="overall" height="90"></canvas>
+    {% else %}
+    <p class="caption">Nothing to chart yet — add a snapshot below, or log a contribution on Transactions.
+      {% if not sections %}First, create a <span class="field-code">brokerage</span> or
+      <span class="field-code">retirement</span> account on <a href="{{ url_for('net_worth') }}#add-account">Net
+      Worth → Add Account</a>.{% endif %}</p>
+    {% endif %}
+    {% if allocation and summary.current_value %}
+    <div class="inv-allocation">
+      {% for a in allocation %}
+      <div class="bar-row">
+        <div class="bar-row-label"><span>{{ a.name }}</span>
+          <span>{{ fmt_money(a.balance) }} ({{ "%.0f"|format(a.balance / summary.current_value * 100) }}%)</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ a.balance / summary.current_value * 100 }}%; background: {{ PASTEL_COLORS[loop.index0 % (PASTEL_COLORS|length)] }}"></div></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if needs_attention %}
+<div class="card" data-inv-assign-group data-inv-guess-refresh>
+  <h2>Investment transactions that need a look <span class="caption">({{ needs_attention|length }})</span></h2>
+  <p class="caption">Open one on Transactions (new tab) and add
+    {% for s in sections %}<span class="field-code">{{ s.name.split()[0]|lower }}</span>{{ ' or ' if not loop.last }}{% endfor %}
+    to its note — when you come back here, its dropdown fills in by itself. Or pick from the dropdown directly
+    (including <strong>Not an investment</strong>). Nothing is kept until <strong>Save changes</strong>.</p>
+  {{ assign_controls() }}
+  <table class="nw-table">
+    <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Why</th><th>Went to</th></tr>
+    {% for c in needs_attention %}
+    <tr>
+      <td>{{ c.date }}</td>
+      <td><a href="{{ url_for('transactions', period='custom', start=c.date, end=c.date) }}" target="_blank" rel="noopener">{{ c.description or '—' }}</a>
+        <div class="caption">{{ c.from_account }}</div></td>
+      <td class="num">{{ fmt_money(c.amount) }}</td>
+      <td class="caption" data-inv-why="{{ c.id }}">
+        {% if c.status == 'wrong_type' %}Category says investment, but Type is
+          <span class="field-code">{{ c.transaction_type }}</span> — change Type to
+          <span class="field-code">investment_contribution</span> to count it.
+        {% elif c.status == 'ambiguous' %}Names more than one account.
+        {% else %}Doesn't say which account.{% endif %}
+      </td>
+      <td>{{ assign_select(c, '—') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% for s in sections %}
+<details class="inv-panel" data-collapse-key="inv-{{ s.id }}" open>
+  <summary class="inv-panel-header">
+    <h2>{{ s.name }}</h2>
+    <span class="inv-panel-peek">{{ fmt_money(s.summary.current_value) }}
+      {% if s.summary.growth_pct is not none %}<span class="{{ 'delta-positive' if s.summary.growth >= 0 else 'delta-negative' }}">
+        {{ '+' if s.summary.growth_pct > 0 }}{{ "%.1f"|format(s.summary.growth_pct) }}%</span>{% endif %}</span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="inv-panel-period">
+    {{ period_selector(s.period, [('all','All'), ('3mo','3M'), ('6mo','6M'), ('1yr','1Y'), ('5yr','5Y')], s.prefix, min_date|default('')) }}
+  </div>
+  {{ stat_cards(s.summary) }}
+  <div class="card">
+    <h2>Principal vs. Total Value — {{ s.period.label }}</h2>
+    {% if s.trend %}
+    <canvas data-inv-chart="{{ loop.index0 }}" height="90"></canvas>
+    {% else %}
+    <p class="caption">Nothing recorded for {{ s.name }} yet.</p>
+    {% endif %}
+    <p class="caption">
+      {% if s.snapshot_date %}Last snapshot {{ s.snapshot_date }}{% if s.added_since_snapshot %}, plus
+        {{ fmt_money(s.added_since_snapshot) }} deposited since (counted at face value until your next snapshot){% endif %}.
+      {% else %}No snapshot yet — value is just the money deposited, until you add one.{% endif %}
+      {{ s.contribution_count }} contribution{{ '' if s.contribution_count == 1 else 's' }} logged from Transactions{% if s.deposit_count %},
+      {{ s.deposit_count }} principal entr{{ 'y' if s.deposit_count == 1 else 'ies' }} added by hand{% endif %}.
+    </p>
+  </div>
+  {% if s.cds %}
+  <div class="card">
+    <h2>CDs &amp; bonds in {{ s.name }}</h2>
+    {{ cd_table(s.cds, s.cds_total, cd_accounts, show_balance=False, controls_top=True) }}
+    <p class="caption">Same records as Net Worth's CDs &amp; Bonds table — edit here or there, it's one record (add new
+      ones there). Already part of {{ s.name }}'s value above, never added on top.</p>
+  </div>
+  {% endif %}
+</details>
+{% endfor %}
+
+<div class="card">
+  <h2>Add a Snapshot</h2>
+  <form class="filters" data-snapshot-add-form>
+    <select name="account_name" required>
+      <option value="" disabled selected>Account</option>
+      {% for a in investment_accounts %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
+    </select>
+    <input type="date" name="date" required>
+    {# Fill in either or both; autocomplete off: no dropdown of previously typed amounts #}
+    <input type="text" name="balance" placeholder="Current value" autocomplete="off" inputmode="decimal" style="min-width:130px">
+    <input type="text" name="principal_added" placeholder="Principal added" autocomplete="off" inputmode="decimal" style="min-width:140px">
+    <input type="text" name="note" placeholder="Note (optional)" autocomplete="off" style="min-width:180px">
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  <ul class="caption ledger-tips">
+    <li>Fill in <strong>current value</strong>, <strong>principal added</strong>, or both.</li>
+    <li><strong>Current value</strong> — what your statement (or the brokerage's website) says the account is
+      worth on that date. Saving the same account + date again replaces it.</li>
+    <li><strong>Principal added</strong> — new money you put in on that date. Principal is the running total of
+      these plus the transfers picked up from Transactions, and value goes up by it until your next current value.
+      Skip it for money already logged on Transactions — it would count twice (you'll be asked if it looks like
+      one).</li>
+  </ul>
+</div>
+
+<details class="card inv-entries" data-collapse-key="inv-entries" data-inv-entries>
+  <summary class="inv-panel-header">
+    <h2>All entries</h2>
+    <span class="caption">{{ entries|length }} — your snapshots and the contributions picked up from Transactions</span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  {% if entries %}
+  {# Snapshot rows edit in place; contribution rows are transactions, so
+     they're edited on Transactions — only their account choice is here. #}
+  <div class="save-controls inv-assign-controls">
+    <span class="caption" data-entries-count></span>
+    <button class="btn btn-secondary" data-entries-delete disabled>Delete selected</button>
+    <button class="btn btn-secondary" data-entries-discard disabled>Discard</button>
+    <button class="btn btn-primary" data-entries-save disabled>Save changes</button>
+  </div>
+  <div class="inv-entries-scroll">
+  <table class="nw-table inv-entries-table">
+    <tr>
+      <th></th><th>Date</th><th>Account</th><th>Source</th><th class="num">Amount</th><th>Details</th>
+    </tr>
+    {% for e in entries %}
+    {% if e.kind in ('snapshot', 'deposit') %}
+    {# Snapshot = current value; deposit = principal added by hand. Both edit in place. #}
+    {% set kind = 'snap' if e.kind == 'snapshot' else 'dep' %}
+    <tr>
+      <td><input type="checkbox" data-entry-select="{{ kind }}:{{ e.id }}" title="Select this entry"></td>
+      <td><input type="date" data-entry-field="date" data-entry-key="{{ kind }}:{{ e.id }}" value="{{ e.date }}"></td>
+      <td>
+        <select data-entry-field="account_name" data-entry-key="{{ kind }}:{{ e.id }}">
+          {% for a in investment_accounts %}<option value="{{ a.name }}" {{ 'selected' if a.name == e.account }}>{{ a.name }}</option>{% endfor %}
+        </select>
+      </td>
+      {% if e.kind == 'snapshot' %}
+      <td><span class="inv-source inv-source-manual">Current value</span></td>
+      <td class="num"><input type="text" class="num" data-entry-field="balance" data-entry-key="snap:{{ e.id }}" value="{{ fmt_num(e.amount) }}" autocomplete="off"></td>
+      {% else %}
+      <td><span class="inv-source inv-source-deposit">Principal added</span></td>
+      <td class="num"><input type="text" class="num" data-entry-field="amount" data-entry-key="dep:{{ e.id }}" value="{{ fmt_num(e.amount) }}" autocomplete="off"></td>
+      {% endif %}
+      <td>
+        <input type="text" class="inv-entry-note" data-entry-field="note" data-entry-key="{{ kind }}:{{ e.id }}"
+               value="{{ e.note or '' }}" placeholder="Add a note…" autocomplete="off">
+        {% if e.kind == 'snapshot' and e.principal is not none %}<div class="caption">older entry with total principal
+          {{ fmt_money(e.principal) }}</div>{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr class="{{ 'inv-entry-muted' if e.status != 'matched' }}">
+      <td></td>
+      <td>{{ e.date }}</td>
+      <td>{{ e.account or '—' }}</td>
+      <td><span class="inv-source">From Transactions</span></td>
+      <td class="num">+{{ fmt_money(e.amount) }}</td>
+      <td class="caption">{{ e.description or '—' }} · {{ e.from_account }} ·
+        {% if e.status == 'matched' %}{{ {'manual': 'set by you', 'note': 'matched by note', 'description': 'matched by description'}[e.how] }}
+        {% elif e.status == 'excluded' %}marked not an investment — not counted
+        {% elif e.status == 'wrong_type' %}Type isn't investment_contribution — not counted
+        {% else %}no account yet — not counted{% endif %}
+        · <a href="{{ url_for('transactions', period='custom', start=e.date, end=e.date) }}" target="_blank" rel="noopener">Edit on Transactions ↗</a>
+        <div class="inv-entry-assign">{{ assign_select(e, 'Change account…') }}</div>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  </div>
+  <p class="caption">Click a current value's or principal added's date, account or amount to edit it, then Save.
+    Contributions from Transactions are edited there — here you can only change which account they count toward.</p>
+  {% else %}
+  <p class="caption">Nothing yet.</p>
+  {% endif %}
+</details>
+
+<div class="card">
+  <h2>How contributions are logged automatically</h2>
+  <ul class="caption ledger-tips">
+    <li>On Transactions, a transfer to your portfolio has Type <span class="field-code">investment_contribution</span>
+      (on the bank account the money left).</li>
+    <li>It goes to the account named in its <strong>note</strong> —
+      {% for s in sections %}<span class="field-code">{{ s.name.split()[0]|lower }}</span> → {{ s.name }}{{ ', ' if not loop.last }}{% endfor %}
+      (capitals don't matter) — or, if the note doesn't say, its description (e.g. "Transfer to Roth IRA").
+      A choice made in a "Went to" / "Change…" dropdown here beats both.</li>
+    <li>It then adds to that account's principal and value right away. Value is only an estimate until your next
+      current value, which replaces it with the real number (market gains/losses included).</li>
+    <li>Money that never went through a logged transaction: use <strong>Principal added</strong> in the form
+      above.</li>
+    <li>Anything with an investment Category, or that can't be matched, shows up in the list near the top until
+      it's sorted out.</li>
+  </ul>
+</div>
+
+<script>
+const PASTEL = {{ PASTEL_COLORS|tojson }};
+const GOOD_FILL = {{ STATUS_GOOD_FILL|tojson }};
+const FIXED_INCOME_FILL = 'rgba(255, 196, 120, 0.45)';  // light amber band
+const FIXED_INCOME_LINE = 'rgba(214, 140, 40, 0.9)';
+// Each chart's points + the range its own date row picked
+const invCharts = { overall: { trend: {{ trend|tojson }}, fixedIncome: {{ fixed_income|tojson }},
+                                start: {{ period.start|tojson }}, end: {{ period.end|tojson }} } };
+{% for s in sections %}invCharts[{{ loop.index0|tojson }}] = { trend: {{ s.trend|tojson }}, fixedIncome: {{ s.fixed_income|tojson }},
+                                start: {{ s.period.start|tojson }}, end: {{ s.period.end|tojson }} };
+{% endfor %}
+
+// A real timeline: x is the date itself (ms), so points sit at their true
+// dates and every month takes the same width however uneven the entries
+// are. Starts at the chart's first point (the range start if the money was
+// already there, else the first deposit), ends at the range end; straight
+// lines join consecutive points.
+const toMs = (iso) => new Date(iso + 'T00:00').getTime();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Month-start ticks, every 1/2/3/6/12/24 months — whichever keeps it to ~12
+function monthTicks(min, max) {
+  const start = new Date(min);
+  const end = new Date(max);
+  const span = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  const step = [1, 2, 3, 6, 12, 24].find((s) => span / s <= 12) || 36;
+  const ticks = [];
+  const d = new Date(start.getFullYear(), start.getMonth() + 1, 1); // first month start inside the range
+  while (d.getMonth() % step !== 0 && step <= 12) d.setMonth(d.getMonth() + 1);
+  for (; d.getTime() <= max; d.setMonth(d.getMonth() + step)) ticks.push({ value: d.getTime() });
+  return { ticks, step };
+}
+
+function tickLabel(ms, step) {
+  const d = new Date(ms);
+  if (step >= 12) return String(d.getFullYear());
+  return d.toLocaleDateString('en-US', { month: 'short' }) + " '" + String(d.getFullYear()).slice(2);
+}
+
+document.querySelectorAll('[data-inv-chart]').forEach((canvas) => {
+  const chart = invCharts[canvas.dataset.invChart] || { trend: [] };
+  const trend = chart.trend;
+  const points = trend.map((d) => toMs(d.date));
+  const max = Math.max(toMs(chart.end), ...points);
+  let min = points.length ? points[0] : toMs(chart.start);
+  if (max - min < 30 * DAY_MS) min = max - 30 * DAY_MS; // a lone point still gets a little room
+  let tickStep = 1;
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      // Principal fills solid from zero (index 0, fill:'origin'). Total Value
+      // fills only the band between itself and the Principal line (fill: 0,
+      // i.e. relative to dataset index 0) — Chart.js computes that boundary
+      // from the actual data every time, so the two fills are geometrically
+      // disjoint (never overlapping/blending) no matter which line is higher
+      // at a given point; nothing here assumes Principal stays the lower one.
+      datasets: [
+        {
+          label: 'Principal', data: trend.map(d => ({ x: toMs(d.date), y: d.principal })),
+          borderColor: PASTEL[0], backgroundColor: PASTEL[0] + '77', fill: 'origin',
+          // Principal only changes on a deposit: hold flat, then step up
+          // at the next point ('before' = horizontal first, then vertical)
+          stepped: 'before', pointRadius: 2,
+        },
+        {
+          label: 'Total Value', data: trend.map(d => ({ x: toMs(d.date), y: d.value })),
+          borderColor: GOOD_FILL, backgroundColor: GOOD_FILL + '77', fill: 0,
+          tension: 0, pointRadius: 2,
+        },
+        // The part sitting in CDs & bonds: a box from each one's opened date
+        // to its maturity, stacked when they overlap. Drawn on top (order -1)
+        // so it reads as the base of the principal area.
+        ...(chart.fixedIncome && chart.fixedIncome.some((d) => d.amount > 0) ? [{
+          label: 'In CDs & bonds (held to maturity)',
+          data: chart.fixedIncome.map((d) => ({ x: toMs(d.date), y: d.amount })),
+          borderColor: FIXED_INCOME_LINE, backgroundColor: FIXED_INCOME_FILL, borderWidth: 1,
+          borderDash: [4, 3], fill: 'origin', stepped: 'before', pointRadius: 0, order: -1,
+        }] : []),
+      ],
+    },
+    options: {
+      scales: {
+        x: {
+          type: 'linear', min, max,
+          afterBuildTicks: (scale) => {
+            const built = monthTicks(scale.min, scale.max);
+            tickStep = built.step;
+            scale.ticks = built.ticks;
+          },
+          ticks: { autoSkip: false, maxRotation: 0, callback: (v) => tickLabel(v, tickStep) },
+        },
+        y: { ticks: { callback: (v) => MONEY_SYMBOL + v.toLocaleString() } },
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            // Every point carries its own date (x); the band has different points than the lines
+            title: (items) => localISODate(new Date(items[0].raw.x)),
+            label: (ctx) => `${ctx.dataset.label}: ${MONEY_SYMBOL}${ctx.parsed.y.toLocaleString(undefined, MONEY_DIGITS)}`,
+          },
+        },
+      },
+    },
+  });
+});
+</script>
+{% endblock %}

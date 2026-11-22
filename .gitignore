@@ -1,0 +1,39 @@
+# Everything personal stays out of git. Only code and docs are committed.
+
+# Virtual environment
+finance_tracker_venv/
+.venv/
+venv/
+
+# Your data: the database, the trained categorizer, demo data — all of data/
+data/
+*.db
+*.sqlite3
+*.joblib
+
+# Downloaded bank statements (deleted after import, never committed)
+incoming_statements/
+
+# Optional one-time history import files
+import_history/
+
+# Your own config (custom CSV layouts); the example lives in static/examples/
+config/
+
+# Spreadsheets anywhere — real financial history (the templates are CSVs in static/examples/)
+*.xlsx
+*.xls
+
+# From the original single-user version — kept so leftovers there are never committed
+legacy_data/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store

@@ -1,0 +1,9 @@
+Date,Account,Amount,Description,Category,Type,Method,Note,Balance
+2024-01-02,Everyday Checking,2650.00,ACME CORP PAYROLL,Salary,income,ACH,,4210.55
+2024-01-03,Everyday Checking,-1850.00,Rent - Maple Apartments,Rent,expense,Check,January rent,2360.55
+2024-01-05,Rewards Card,-54.12,TRADER JOE'S #552,Groceries,,,,
+2024-01-08,Rewards Card,-18.40,Local Cafe,Dining,,,lunch with Sam,
+2024-01-15,Everyday Checking,-500.00,Transfer to Roth IRA,Investing,investment_contribution,,roth,1860.55
+2024-01-20,Everyday Checking,-300.00,Zelle to Mom,Repayment,personal_transfer,Zelle,paying back December,1560.55
+2024-01-25,Everyday Checking,-72.52,Rewards Card payment,,internal_transfer,,,1488.03
+2024-01-25,Rewards Card,72.52,PAYMENT THANK YOU,,internal_transfer,,,

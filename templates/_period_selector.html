@@ -1,0 +1,2 @@
+{% from "_macros.html" import period_selector with context %}
+{{ period_selector(period, [('month','This Month'), ('3mo','3 Months'), ('6mo','6 Months'), ('year','Year')], '', min_date|default('')) }}

@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(data/**)",
+      "Read(incoming_statements/**)",
+      "Read(import_history/**)",
+      "Read(config/**)",
+      "Read(legacy_data/**)",
+
+      "Edit(data/**)",
+      "Edit(incoming_statements/**)",
+      "Edit(import_history/**)",
+      "Edit(legacy_data/**)",
+
+      "Write(data/**)",
+      "Write(incoming_statements/**)",
+      "Write(import_history/**)",
+      "Write(legacy_data/**)",
+
+      "Grep(data/**)",
+      "Grep(incoming_statements/**)",
+      "Grep(import_history/**)",
+      "Grep(config/**)",
+      "Grep(legacy_data/**)",
+
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(less:*)",
+      "Bash(more:*)",
+      "Bash(strings:*)",
+      "Bash(sqlite3:*)",
+      "Bash(open:*)",
+      "Bash(vi:*)",
+      "Bash(vim:*)",
+      "Bash(nano:*)",
+      "Bash(emacs:*)",
+      "Bash(awk:*)",
+      "Bash(xxd:*)",
+      "Bash(od:*)"
+    ]
+  }
+}

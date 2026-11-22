@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Net Worth · Finance Tracker{% endblock %}
+{% block content %}
+<h1>Net Worth</h1>
+
+{% macro change_cell(change, symbol) -%}
+  {% if change is none %}
+    <td class="num">—</td>
+  {% elif change >= 0 %}
+    <td class="num delta-positive">+{{ fmt_money(change, symbol) }}</td>
+  {% else %}
+    <td class="num delta-negative">{{ fmt_money(change, symbol) }}</td>
+  {% endif %}
+{%- endmacro %}
+
+{% for table in tables %}
+{% if table.has_rows or table.currency == BASE_CURRENCY %}
+<div class="card">
+  <h2>{{ table.label }} <span class="caption">(in {{ table.currency }})</span></h2>
+  {% if table.has_rows %}
+  <table class="nw-table">
+    <colgroup>
+      <col style="width:36%"><col style="width:30%">
+      <col style="width:19%"><col style="width:15%">
+    </colgroup>
+    <tr>
+      <th>Account</th><th>Institution</th>
+      <th class="num">Balance</th><th class="num">30-Day</th>
+    </tr>
+    {% for group_name in ["Cash", "Investments", "Credit", "Loans"] %}
+      {% if table.groups[group_name] %}
+      {% set gt = table.group_totals[group_name] %}
+      <tr class="nw-group-row">
+        <td colspan="2">{{ group_name.upper() }}</td>
+        <td class="num {{ 'amount-negative' if gt.total < 0 else '' }}">{{ fmt_money(gt.total, table.symbol) }}</td>
+        {{ change_cell(gt.change_30d, table.symbol) }}
+      </tr>
+      {% for row in table.groups[group_name] %}
+      <tr>
+        <td class="nw-account">{{ row.account.name }}{% if row.from_transactions %}
+          <span class="nw-source" title="No recorded balance — this is the sum of all its transactions. If it doesn't match your bank, use Set Balance below.">from transactions</span>{% endif %}</td>
+        <td class="nw-institution">{{ row.account.institution }}</td>
+        <td class="num nw-balance {{ 'amount-negative' if row.balance < 0 else '' }}">{{ fmt_money(row.balance, table.symbol) }}</td>
+        {{ change_cell(row.change_30d, table.symbol) }}
+      </tr>
+      {% endfor %}
+      {% endif %}
+    {% endfor %}
+    <tr class="nw-total-row">
+      <td colspan="2">Total ({{ table.currency }})</td>
+      <td class="num {{ 'amount-negative' if table.total < 0 else '' }}">{{ fmt_money(table.total, table.symbol) }}</td>
+      <td></td>
+    </tr>
+  </table>
+  {% else %}
+  <p class="caption">No accounts yet — add one with the <a href="#add-account">Add Account</a> form at the bottom of
+    this page.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+
+<div class="card">
+  <div class="stat-label">Net Worth (all accounts, in {{ BASE_CURRENCY }})</div>
+  <div class="stat-value {{ 'stat-bad' if breakdown.net_worth < 0 else '' }}">{{ fmt_money(breakdown.net_worth) }}</div>
+  {% if rates_used %}
+  <p class="caption">Each table above stays in its own currency; only this line converts, using the rates stored in
+    <span class="field-code">src/fx.py</span> (edited by hand, never live):
+    {% for code, rate in rates_used %}1 {{ code }} = {{ BASE_SYMBOL }}{{ "%.4g"|format(rate) }}{{ ', ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
+</div>
+
+{% if other_accounts %}
+<div class="card">
+  <h2>Paid by someone else <span class="caption">(not in Net Worth)</span></h2>
+  <table class="nw-table">
+    <tr><th>Account</th><th>Institution</th><th>Paid by</th></tr>
+    {% for a in other_accounts %}
+    <tr><td class="nw-account">{{ a.name }}</td><td class="nw-institution">{{ a.institution }}</td>
+      <td><a href="{{ url_for('ious', person=a.iou_person) }}">{{ a.iou_person }}</a></td></tr>
+    {% endfor %}
+  </table>
+  <p class="caption">Their spending still shows on Spending and Cash Flow, and counts as money you owe that person on
+    the <a href="{{ url_for('ious') }}">IOUs</a> page (unless marked Not Mine).</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Set Balance</h2>
+  <form class="filters" data-set-balance-form>
+    <select name="account_name" required>
+      <option value="" disabled selected>Account</option>
+      {% for a in balance_accounts %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
+    </select>
+    <input type="date" name="date" required>
+    <input type="text" name="balance" placeholder="Balance on that date" required style="min-width:160px">
+    <button type="submit" class="btn btn-primary">Set</button>
+  </form>
+  <ul class="caption ledger-tips">
+    <li>Accounts marked <span class="nw-source">from transactions</span> have no recorded balance, so their balance
+      is the sum of all their transactions — right if the first one was the opening deposit.</li>
+    <li>If that's off (e.g. the account had money before you started logging), enter what your bank shows for a
+      date — today is easiest. Transactions on or before that date are treated as already included; later ones are
+      added on top.</li>
+    <li>Credit cards and loans: enter what you owe as a positive number. Setting the same account + date again
+      replaces it. Brokerage/retirement balances are set on the Investments page.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>CDs &amp; Bonds</h2>
+  {% if cds.cds %}
+  {% from "_cd_table.html" import cd_table with context %}
+  {{ cd_table(cds.cds, cds.total_principal, cd_accounts) }}
+  <p class="caption">Click any cell to edit it, then Save. <strong>Current Balance</strong> isn't editable — it's the
+    linked account's balance (so it's the whole account if it holds other money too). Ones held in an investment
+    account also show — and can be edited — on the Investments page.</p>
+  {% else %}
+  <p class="caption">No CDs or bonds recorded yet — add one below.</p>
+  {% endif %}
+
+  <h3 style="margin-top:20px;">Add a CD or bond</h3>
+  <form class="filters" data-cd-add-form>
+    <select name="kind" title="Type">
+      {% for k in FIXED_INCOME_KINDS %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+    </select>
+    <select name="account_name" required>
+      <option value="" disabled selected>Account</option>
+      {% for a in cd_accounts %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
+    </select>
+    <input type="text" name="institution" placeholder="Institution / issuer (e.g. Marcus, US Treasury)" required style="min-width:200px">
+    <input type="text" name="principal" placeholder="Principal" required autocomplete="off" inputmode="decimal" style="min-width:100px">
+    <input type="text" name="apy" placeholder="Rate / yield %" autocomplete="off" inputmode="decimal" style="min-width:110px">
+    <input type="date" name="opened_date" title="Opened / bought">
+    <input type="date" name="maturity_date" title="Matures">
+    <input type="text" name="note" placeholder="Note" style="min-width:140px">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+  <p class="caption">This is a detail view of terms. The money is already counted once through the account that holds
+    it (its own savings account, or a brokerage/retirement account) — never added into Net Worth a second time. For
+    a bond held in a brokerage account, its market value is already in that account's current value.</p>
+</div>
+
+<div class="card">
+  <h2>Investments</h2>
+  {% if investments %}
+  <table class="nw-table">
+    <tr><th>Account</th><th class="num">Balance</th><th class="num">Principal</th><th class="num">Growth</th></tr>
+    {% for inv in investments %}
+    {% set growth = inv.balance - inv.principal %}
+    <tr>
+      <td>{{ inv.name }}</td>
+      <td class="num">{{ fmt_money(inv.balance) }}</td>
+      <td class="num">{{ fmt_money(inv.principal) }}</td>
+      <td class="num {{ 'delta-positive' if growth >= 0 else 'delta-negative' }}">{{ fmt_money(growth) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="caption">Already included in the Investments subtotal and Net Worth total above — excluded only from
+    the Overview page's headline number, so day-to-day market swings don't move that figure. See
+    <a href="{{ url_for('investments') }}">Investments</a> for the principal-vs-growth trend, and to add a
+    snapshot.</p>
+  {% else %}
+  <p class="caption">No investment accounts yet. Create one with the Add Account form below (type
+    <span class="field-code">brokerage</span> or <span class="field-code">retirement</span>), then record a
+    snapshot on the <a href="{{ url_for('investments') }}">Investments</a> page.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="add-account">
+  <h2>Add Account</h2>
+  <form class="filters" data-account-add-form>
+    <input type="text" name="name" placeholder="Account name (e.g. Chase Checking)" required style="min-width:220px">
+    <input type="text" name="institution" placeholder="Institution (e.g. Chase)" required style="min-width:160px">
+    <select name="account_type" required>
+      <option value="" disabled selected>Type</option>
+      {% for t in account_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+    <select name="currency" title="The account's own currency">
+      {% for c in currencies %}<option value="{{ c }}" {{ 'selected' if c == BASE_CURRENCY }}>{{ c }}</option>{% endfor %}
+    </select>
+    <select name="owner" title="Who the account belongs to" data-owner-select>
+      <option value="self">Mine</option>
+      <option value="joint">Joint</option>
+      <option value="other">Someone else pays it</option>
+    </select>
+    <input type="text" name="iou_person" placeholder="Paid by (name)" list="iou-people" data-owner-person hidden
+           style="min-width:140px" autocomplete="off">
+    <input type="text" name="starting_balance" placeholder="Starting balance (optional)" style="min-width:170px">
+    <input type="date" name="balance_date" title="Starting balance as of this date">
+    <button type="submit" class="btn btn-primary">Create</button>
+  </form>
+  <datalist id="iou-people">{% for p in people %}<option value="{{ p }}">{% endfor %}</datalist>
+  <ul class="caption ledger-tips">
+    <li><strong>Type</strong> — <span class="field-code">checking</span>, <span class="field-code">savings</span>,
+      <span class="field-code">credit_card</span>, <span class="field-code">loan</span>,
+      <span class="field-code">brokerage</span> / <span class="field-code">retirement</span> (investments),
+      <span class="field-code">digital_wallet</span> (Venmo, PayPal…) or <span class="field-code">cash</span>.</li>
+    <li><strong>Someone else pays it</strong> — e.g. a card in your name that a family member pays off. It's kept out
+      of Net Worth, and what you spend on it counts as owed to them on the <a href="{{ url_for('ious') }}">IOUs</a>
+      page.</li>
+    <li><strong>Starting balance</strong> — what the account held on that date. Transactions dated after it are
+      added on top. Without one, the balance is the sum of all its transactions (fine if the first one is the
+      opening deposit). For a credit card, enter
+      what you owe as a positive number.</li>
+    <li><strong>Cash</strong> and <strong>digital_wallet</strong> don't take a starting balance — their balance is
+      the sum of their transactions, so log the opening amount as a transaction instead.</li>
+    <li>Brokerage/retirement: leave it blank and add snapshots on the Investments page.</li>
+    <li>After creating it, the account name works on the Transactions page right away (and shows up in the Account
+      suggestions).</li>
+  </ul>
+</div>
+{% endblock %}

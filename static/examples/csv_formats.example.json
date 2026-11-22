@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Example: a card that lists purchases as positive",
+    "date": "Date",
+    "description": "Description",
+    "amount": "Amount",
+    "match": ["Card Member", "Account #"],
+    "negate": true
+  },
+  {
+    "name": "Example: European bank (day-first dates, decimal commas)",
+    "date": "Buchungstag",
+    "description": "Verwendungszweck",
+    "amount": "Betrag",
+    "date_format": "%d.%m.%Y",
+    "decimal_comma": true
+  },
+  {
+    "name": "Example: separate debit and credit columns",
+    "date": "Posting Date",
+    "description": "Memo",
+    "debit": "Withdrawals",
+    "credit": "Deposits",
+    "balance": "Ledger Balance",
+    "check_number": "Check #"
+  }
+]

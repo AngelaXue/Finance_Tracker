@@ -1,0 +1,57 @@
+{# Editable "CDs & Bonds" table (the cds table, typed by `kind`), shared by
+   Net Worth (all of them) and Investments (each account's own). Both write through /api/cds/update and /api/cds/delete,
+   so an edit on either page shows on the other. Each copy is its own
+   [data-cd-section] with its own Save / Discard / Delete buttons. #}
+{% macro cd_controls(position) %}
+  <div class="save-controls cd-controls-{{ position }}">
+    <button class="btn btn-secondary" data-cd-delete-btn disabled>Delete selected</button>
+    <button class="btn btn-secondary" data-cd-discard-btn disabled>Discard</button>
+    <button class="btn btn-primary" data-cd-save-btn disabled>Save changes</button>
+  </div>
+{% endmacro %}
+
+{# controls_top: buttons above the table (Investments page) vs. below (Net Worth) #}
+{% macro cd_table(cd_list, total_principal, cd_accounts, show_balance=True, controls_top=False) %}
+{% set cd_account_names = cd_accounts|map(attribute='name')|list %}
+<div data-cd-section>
+  {% if controls_top %}{{ cd_controls('top') }}{% endif %}
+  <table class="nw-table cd-table">
+    <tr>
+      <th><input type="checkbox" data-cd-select-all title="Select all rows"></th>
+      <th>Type</th><th>Institution</th><th>Account</th><th class="num">Principal</th>
+      {% if show_balance %}<th class="num" title="The linked account's balance — not edited here">Current Balance</th>{% endif %}
+      <th class="num" title="APY for a CD, coupon or yield for a bond">Rate / Yield %</th>
+      <th>Opened</th><th>Maturity</th><th>Note</th>
+    </tr>
+    {% for cd in cd_list %}
+    <tr>
+      <td><input type="checkbox" data-cd-row-id="{{ cd.id }}" title="Select this row"></td>
+      <td>
+        <select data-cd-field="kind" data-cd-id="{{ cd.id }}">
+          {% for k in FIXED_INCOME_KINDS %}<option value="{{ k }}" {{ 'selected' if k == cd.kind }}>{{ k }}</option>{% endfor %}
+        </select>
+      </td>
+      <td><input type="text" data-cd-field="institution" data-cd-id="{{ cd.id }}" value="{{ cd.institution }}"></td>
+      <td>
+        <select data-cd-field="account_name" data-cd-id="{{ cd.id }}">
+          {% if cd.account_name not in cd_account_names %}<option value="{{ cd.account_name }}" selected>{{ cd.account_name }}</option>{% endif %}
+          {% for name in cd_account_names %}<option value="{{ name }}" {{ 'selected' if name == cd.account_name }}>{{ name }}</option>{% endfor %}
+        </select>
+      </td>
+      <td class="num"><input type="text" class="num" data-cd-field="principal" data-cd-id="{{ cd.id }}" value="{{ fmt_num(cd.principal) }}"></td>
+      {% if show_balance %}<td class="num">{{ fmt_money(cd.current_balance) if cd.current_balance is not none else '—' }}</td>{% endif %}
+      <td class="num"><input type="text" class="num" data-cd-field="apy" data-cd-id="{{ cd.id }}" value="{{ '%.2f'|format(cd.apy) if cd.apy is not none else '' }}" placeholder="—"></td>
+      <td><input type="date" data-cd-field="opened_date" data-cd-id="{{ cd.id }}" value="{{ cd.opened_date or '' }}"></td>
+      <td><input type="date" data-cd-field="maturity_date" data-cd-id="{{ cd.id }}" value="{{ cd.maturity_date or '' }}"></td>
+      <td><input type="text" data-cd-field="note" data-cd-id="{{ cd.id }}" value="{{ cd.note or '' }}" placeholder="—"></td>
+    </tr>
+    {% endfor %}
+    <tr class="nw-total-row">
+      <td colspan="4">Total Principal</td>
+      <td class="num">{{ fmt_money(total_principal) }}</td>
+      <td colspan="{{ 5 if show_balance else 4 }}"></td>
+    </tr>
+  </table>
+  {% if not controls_top %}{{ cd_controls('bottom') }}{% endif %}
+</div>
+{% endmacro %}

@@ -1,0 +1,565 @@
+{% extends "base.html" %}
+{% block title %}Help · Finance Tracker{% endblock %}
+{% block content %}
+<h1>Help</h1>
+<p class="caption">How the app works and the rules behind the numbers. The README in the project folder has the
+  same material in more depth, plus setup and customization.</p>
+
+{# FAQ style: General topics that apply across pages first, then one folded
+   section per page in sidebar order, with that page's topics inside. Any
+   in-page link (or arriving with a #hash, e.g. the (i) next to Type on
+   Transactions) opens the section holding its target — see initHelpPage
+   in app.js. Sub-topic anchors (#logging, #duplicates, ...) live on h3s. #}
+<div class="help-toolbar">
+  <button type="button" class="btn btn-secondary" data-help-expand>Expand all</button>
+  <button type="button" class="btn btn-secondary" data-help-collapse>Collapse all</button>
+</div>
+
+<div class="help-group-label">General <span>— applies across pages</span></div>
+<details class="card help-section" id="quick-start">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Quick start</h2><span class="caption">From nothing to your first numbers</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ol>
+    <li><strong>Add your accounts</strong> on <a href="{{ url_for('net_worth') }}#add-account">Net Worth → Add
+      Account</a>: name, institution, type, currency. Add a starting balance if the account already has money in it
+      that you won't import.</li>
+    <li><strong>Download statements</strong> as CSV from each bank's website (look for Download / Export).</li>
+    <li><strong>Import them</strong> on the <a href="{{ url_for('import_page') }}">Import</a> page: pick the
+      account, add the files, Preview, Import.</li>
+    <li><strong>Review</strong> the yellow rows on <a href="{{ url_for('transactions') }}">Transactions</a> —
+      categories that were filled in automatically. Fix the Type of anything that's really a transfer.</li>
+    <li>Repeat steps 2–4 once a month. Update investment values on
+      <a href="{{ url_for('investments') }}">Investments</a> when you get a statement.</li>
+  </ol>
+  <p class="caption">To look around with fake data first, stop the app and start it with
+    <span class="field-code">python app.py --demo</span>. Demo data lives in its own database; your real data is
+    never touched.</p>
+  </div>
+</details>
+
+<details class="card help-section" id="type-vs-category">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Transaction Type vs. Category</h2><span class="caption">What decides whether a row counts as spending, income, or a transfer</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li><strong>Type</strong> (<span class="field-code">transaction_type</span>) decides what a row counts toward.
+      Cash Flow, Spending, and Investments all read it.</li>
+    <li><strong>Category</strong> is a free-text label for your own reference — filtering, searching, the Spending
+      breakdown. Only one rule reads it: the Spending page's <a href="#spending">pass-through switch</a>.</li>
+  </ul>
+  <p>So changing a row's category alone never changes what it counts toward. Amounts are signed:
+    <strong>negative = money out</strong>, positive = money in.</p>
+
+  <h3>Which type to pick</h3>
+  <table>
+    <tr><th>Situation</th><th>Type</th><th>Extra step</th></tr>
+    <tr><td>Ordinary income or spending</td>
+      <td><span class="field-code">income</span> / <span class="field-code">expense</span></td><td>—</td></tr>
+    <tr><td>A real purchase, but not your money (e.g. a gift someone else paid for on your card)</td>
+      <td><span class="field-code">expense</span></td>
+      <td>Select it, click "Mark Not Mine" — see <a href="#not-mine">Not Mine</a></td></tr>
+    <tr><td>Between your own accounts: checking → savings, paying off your own card, ATM withdrawal into your
+        Cash account</td>
+      <td><span class="field-code">internal_transfer</span> (both sides)</td><td>—</td></tr>
+    <tr><td>Between you and another person, but not income or spending: paying someone back, being paid back,
+        money you're holding for someone</td>
+      <td><span class="field-code">personal_transfer</span></td>
+      <td>Usually also an IOU — see <a href="#personal-transfer">Personal transfers</a></td></tr>
+    <tr><td>Moving money into an investment account</td>
+      <td><span class="field-code">investment_contribution</span></td>
+      <td>Name the account in the note — see <a href="#investments">Investments</a></td></tr>
+  </table>
+  </div>
+</details>
+
+<details class="card help-section" id="not-mine">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>"Not Mine"</h2><span class="caption">Real purchases that weren't your money</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p>For a transaction that <strong>is</strong> a real purchase (or real income) worth categorizing, but wasn't
+    your own money — e.g. something a relative bought for themselves on a card in your name, or money that landed in
+    your account only to be handed on.</p>
+  <ul>
+    <li>On Transactions, tick the row and click <strong>Mark Not Mine</strong>. <strong>Mark Mine</strong>
+      undoes it. Not Mine rows show in italics with a colored bar; filter with <strong>Not Mine only</strong>.</li>
+    <li><strong>Cash Flow:</strong> left out of income vs. spending.</li>
+    <li><strong>Spending:</strong> still counted — "how much went to Dining on this card" is still a real
+      number.</li>
+    <li><strong>IOUs:</strong> a Not Mine purchase on an account someone else pays isn't counted as owed.</li>
+  </ul>
+  <p class="caption">Different from <a href="#personal-transfer"><span class="field-code">personal_transfer</span></a>,
+    which is for money moving with no purchase at all. A row never needs both.</p>
+  </div>
+</details>
+
+<details class="card help-section" id="personal-transfer">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Personal transfers &amp; pass-through</h2><span class="caption">Money between you and other people</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p><span class="field-code">personal_transfer</span> is for money moving between you and someone else that isn't
+    your income or spending. It behaves exactly like <span class="field-code">internal_transfer</span> — left out
+    of Cash Flow, Spending and "needs review" — but stays its own label so you can tell it apart.</p>
+  <ul>
+    <li><strong>Repaying someone</strong> for something already counted (a friend covered dinner, you Venmo them
+      back): the dinner was the spending; the repayment is a personal transfer. Logging it as
+      <span class="field-code">expense</span> would count the dinner twice.</li>
+    <li><strong>Being paid back</strong> — same idea, money in.</li>
+    <li><strong>Pass-through</strong> — money that arrives for someone else and leaves again. Tag both legs.</li>
+  </ul>
+  <p>To also track who owes whom, mark the row on Transactions with the <strong>IOU…</strong> menu — see
+    <a href="#ious">IOUs</a>.</p>
+
+  <h3>Splitting a shared bill</h3>
+  <p>You paid an $80 internet bill, half of it a roommate's: change the row to $40 <span class="field-code">expense</span>
+    (your half) and add a second $40 row typed <span class="field-code">personal_transfer</span>, marked IOU
+    <strong>I paid</strong> with their name. When they pay you back, mark that row <strong>They paid</strong>.
+    Their balance goes back to zero.</p>
+
+  <h3>Pass-through that comes in as income</h3>
+  <p>Work reimbursements (pay a work expense, get reimbursed, pay the bill) often arrive as ordinary
+    <span class="field-code">expense</span>/<span class="field-code">income</span>. Give those the category
+    <strong>Pass-Through</strong>; Spending hides them by default — see <a href="#spending">Spending</a>.</p>
+  </div>
+</details>
+
+<details class="card help-section" id="card-payoffs">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Credit card payoffs</h2><span class="caption">Keeping payoffs from counting as spending twice</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p>Paying off your own card from your own checking account is <span class="field-code">internal_transfer</span>
+    on <strong>both</strong> sides. The purchases were the spending; the payoff just moves money.</p>
+  <ul>
+    <li><strong>The card's side</strong> is usually tagged automatically — wording like "Payment Thank You"
+      matches a rule.</li>
+    <li><strong>The checking side</strong> is worded differently by every bank and often missed, which counts your
+      purchases a second time. Check that its Type is <span class="field-code">internal_transfer</span>.</li>
+  </ul>
+  <p>To fix many at once, this tags checking rows that exactly match an already-tagged card payment within a few
+    days (dry run first; add <span class="field-code">--apply</span> once the count looks right):</p>
+  <pre class="field-code">python -m src.maintenance retag-card-payoffs "My Checking"</pre>
+  </div>
+</details>
+
+<details class="card help-section" id="digital-wallets">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Cash &amp; digital wallets</h2><span class="caption">Venmo, PayPal and cash on hand</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p>Accounts of type <span class="field-code">cash</span> or <span class="field-code">digital_wallet</span> have no
+    statement, so their balance is always the sum of their own transactions. Log:</p>
+  <ul>
+    <li>Money coming in (a Venmo payment received, being paid in cash)</li>
+    <li>Money spent straight from it</li>
+    <li>Each half of a transfer to/from a bank — e.g. an ATM withdrawal is a negative row on checking
+      <em>and</em> a positive row on Cash, both <span class="field-code">internal_transfer</span></li>
+  </ul>
+  <p>Create one on <a href="{{ url_for('net_worth') }}#add-account">Net Worth → Add Account</a> (no starting balance
+    — log what's in it now as its first transaction).</p>
+  </div>
+</details>
+
+<details class="card help-section" id="currencies">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Currencies</h2><span class="caption">Accounts in more than one currency</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li>Each account has its own currency, and its balances are always shown in it. Net Worth has one table per
+      currency, never blended.</li>
+    <li>Totals that must add different currencies — the one Net Worth figure, Cash Flow, Spending, IOUs — are
+      converted to <strong>{{ BASE_CURRENCY }}</strong> using fixed rates in
+      <span class="field-code">src/fx.py</span>. They're edited by hand, never fetched live; update them now and
+      then.</li>
+    <li>To report in a different currency, or to add one that's missing, edit
+      <span class="field-code">src/fx.py</span> (the README explains how).</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="periods">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Date ranges</h2><span class="caption">"This Month", custom ranges, per-panel ranges</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li>"This Month" runs from the 1st <strong>through today</strong>.</li>
+    <li>A transaction dated in the future won't show under "This Month" — switch to "All" or a custom range.</li>
+    <li>The Year and Month dropdowns on Transactions take over from the period selector when set.</li>
+    <li>Investments defaults to <strong>All</strong>. Each investment account has its own range row; one you
+      haven't touched follows the top row.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="importing">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Importing statements</h2><span class="caption">Which files work, signs, duplicates, older history</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li><strong>Where files go:</strong> each account has its own folder inside
+      <span class="field-code">incoming_statements/</span>, named after the account. The
+      <a href="{{ url_for('import_page') }}">Import</a> page's upload puts files there for you. The folder says
+      which account a file belongs to — file names don't matter.</li>
+    <li><strong>Which banks:</strong> Bank of America and Chase have dedicated readers. Any other CSV with a date
+      column and an amount column (or Debit / Credit columns) is read automatically.</li>
+    <li><strong>Signs:</strong> money out must be negative. Some card exports list purchases as positive; for a
+      card or loan, <em>Auto</em> flips a file when most amounts are positive. Preview shows the first rows — if
+      they look wrong, pick <em>As in file</em> or <em>Flip all signs</em>.</li>
+    <li><strong>A layout that isn't recognized</strong> (day-first dates, decimal commas, no obvious columns) can
+      be described once in <span class="field-code">config/csv_formats.json</span> — see the README.</li>
+    <li><strong>After importing</strong>, files that went in cleanly are deleted (they're a privacy liability once
+      the data is in). A file with a problem stays, with the reason shown.</li>
+    <li><strong>Overlapping downloads are fine:</strong> a row matching one already there is kept and flagged pink
+      for you to check — see <a href="#duplicates">Duplicate flagging</a>.</li>
+    <li><strong>Older history</strong> from a spreadsheet can come in once through the Import page's "Bring in older
+      history" section, using the templates there.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="terminal">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Terminal commands</h2><span class="caption">The same imports without the browser, and one-off fixes</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <h3>Imports</h3>
+  <ul>
+    <li><span class="field-code">python -m src.parsers.csv_importer --audit</span> then
+      <span class="field-code">--import</span> — statements in <span class="field-code">incoming_statements/</span></li>
+    <li><span class="field-code">python -m src.parsers.history_importer --audit</span> then
+      <span class="field-code">--import</span> — files in <span class="field-code">import_history/</span></li>
+  </ul>
+  <h3>One-off fixes</h3>
+  <p>Each runs as <span class="field-code">python -m src.maintenance &lt;command&gt;</span>, is a dry run by default
+    (prints only a count), and needs <span class="field-code">--apply</span> to change anything.</p>
+  <ul>
+    <li><span class="field-code">create-account "Name" --institution X --account-type savings</span> — same as Add
+      Account</li>
+    <li><span class="field-code">set-owner "Name" other --person "Mom"</span> — an account someone else pays</li>
+    <li><span class="field-code">retag-transfers "Account" --note-contains "..."</span> — repayments logged as
+      expenses → <span class="field-code">personal_transfer</span></li>
+    <li><span class="field-code">retag-card-payoffs "Checking Account"</span> — card payoffs counted twice</li>
+    <li><span class="field-code">list-balance-dates</span> — diagnose a jump in the Net Worth trend</li>
+  </ul>
+  </div>
+</details>
+
+<div class="help-group-label">By page <span>— in sidebar order</span></div>
+<details class="card help-section" id="overview">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Overview</h2><span class="caption">The headline number, trend line, and summary cards</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <h3>Net worth number &amp; trend line</h3>
+  <ul>
+    <li>The headline number and trend leave out brokerage/retirement accounts, so market swings between your
+      updates don't move them. The <a href="#net-worth-page">Net Worth</a> page includes everything.</li>
+    <li>The trend has its own date range (All by default). Weekly points for spans up to about 13 months; monthly
+      for longer ones.</li>
+    <li>Every account is evaluated on the same date at each point, so a transfer between two accounts never shows
+      up as a spike.</li>
+  </ul>
+  <p>If you see an unexplained jump anyway, this prints each account's recorded-balance dates (dates only):</p>
+  <pre class="field-code">python -m src.maintenance list-balance-dates --start YYYY-MM-DD --end YYYY-MM-DD</pre>
+
+  <h3>The rest of the page</h3>
+  <ul>
+    <li><strong>Balances by currency</strong> — cash-type balances per currency, plus a combined
+      {{ BASE_CURRENCY }} line.</li>
+    <li><strong>Money allocation</strong> and the small <strong>Sankey</strong> are the same numbers as
+      <a href="#cash-flow">Cash Flow</a>.</li>
+    <li><strong>Spending by category</strong> leaves out Pass-Through rows, like Spending does by default.</li>
+    <li><strong>Debts, Loans &amp; IOUs</strong> — card and loan balances, plus everyone you have an IOU balance
+      with. IOUs are shown for reference only; they don't change net worth.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="net-worth-page">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Net Worth</h2><span class="caption">Account balances, Add Account, Set Balance, CDs &amp; bonds</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body"><span id="net-worth-adjustments"></span>
+  <h3>The tables</h3>
+  <ul>
+    <li>One table per currency, grouped into Cash / Investments / Credit / Loans, each totalled in its own
+      currency. Underneath, <strong>Net Worth (all accounts, in {{ BASE_CURRENCY }})</strong> is the one converted
+      number.</li>
+    <li>Credit cards and loans show as negative (red), since they're money owed.</li>
+    <li><strong>30-Day</strong> is the change since 30 days ago.</li>
+  </ul>
+
+  <h3>How each balance is worked out</h3>
+  <ul>
+    <li><strong>Checking, savings, cards, loans</strong> — the last recorded balance (a starting balance, a Set
+      Balance entry, or a balance from a history import), plus every transaction dated after it. Stays current as
+      you import.</li>
+    <li><strong>…with no recorded balance</strong> — the sum of all its transactions, as if it started at 0. These
+      get a grey <strong>from transactions</strong> tag. If one doesn't match your bank, use
+      <strong>Set Balance</strong> with what the bank shows for a date (today is easiest).</li>
+    <li><strong>Cash and digital wallets</strong> — always the sum of their transactions.</li>
+    <li><strong>Brokerage/retirement</strong> — your last current value from Investments, plus deposits since.</li>
+  </ul>
+
+  <h3>Adding an account</h3>
+  <ul>
+    <li><strong>Add Account</strong> at the bottom: name, institution, type, currency, and who it belongs to.</li>
+    <li><strong>Starting balance + date</strong> (optional): what it held on that date — for money that was there
+      before the transactions you'll import. For a credit card or loan, enter what you owe as a positive number.</li>
+    <li><strong>Someone else pays it</strong> (e.g. a card in your name a family member pays off): kept out of Net
+      Worth entirely, and its spending counts as owed to that person on <a href="#ious">IOUs</a>.</li>
+    <li>Each new account gets its own statements folder for importing. Typing an unknown account name on
+      Transactions never creates one — on purpose, so a typo can't make a duplicate.</li>
+  </ul>
+
+  <h3 id="cds-bonds">CDs &amp; Bonds</h3>
+  <ul>
+    <li>A <strong>memo</strong> of each one's terms — type, principal, rate / yield, dates, note. Never added into
+      Net Worth; the money is already counted through the account it's held in.</li>
+    <li>Add with the form under the table; edit any cell, then <strong>Save changes</strong> (or Discard). One
+      invalid value saves nothing.</li>
+    <li>Ones held in an investment account also show — and can be edited — in that account's panel on
+      Investments.</li>
+    <li><strong>Current Balance</strong> is the linked account's balance (the whole account, if it holds other money
+      too). The rate is never used to estimate interest.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="cash-flow">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Cash Flow</h2><span class="caption">What counts, and how income and outputs balance</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li><strong>Inflow</strong> — every <span class="field-code">income</span> row in the period (not Not Mine),
+      converted to {{ BASE_CURRENCY }}, grouped by category.</li>
+    <li><strong>Living Expenses</strong> — every <span class="field-code">expense</span> row (not Not Mine), across
+      all accounts, accounts someone else pays included.</li>
+    <li><strong>Investing</strong> — every <span class="field-code">investment_contribution</span>.</li>
+    <li><strong>Paid by Others</strong> — manual IOU entries where someone paid for something of yours directly
+      (no transaction in your accounts).</li>
+    <li><strong>Cash Savings</strong> = inflow minus all of the above, when positive. When you spent more than came
+      in, the gap shows as <strong>From Savings</strong> on the left instead — the two sides always balance.</li>
+    <li>Transfers between your own accounts and personal transfers never appear. Pass-through typed as
+      <span class="field-code">expense</span>/<span class="field-code">income</span> <em>is</em> counted here (usually
+      a wash, since it goes in and back out).</li>
+    <li>Hover a link for its amount and its share of income.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="spending">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Spending</h2><span class="caption">The pass-through switch, categories</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ul>
+    <li>Only <span class="field-code">expense</span> rows count, grouped by Category, each with its share and the
+      change from the same-length period before. Click a category to see its transactions.</li>
+    <li>Not Mine rows are still counted here.</li>
+    <li><strong>Pass-through switch:</strong> rows whose Category is <strong>Pass-Through</strong> (any spelling —
+      "pass through", "Passthrough") are hidden by default; flip <strong>Include pass-through</strong> to count
+      them. This is the one place a Category changes the math.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="transactions">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Transactions</h2><span class="caption">Editing, logging by hand, suggestions, duplicates, categorization</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <h3 id="logging">Editing and logging by hand</h3>
+  <ul>
+    <li>Click any cell to edit it, then <strong>Save changes</strong> (or Discard). Nothing is saved until you
+      click Save.</li>
+    <li><strong>+ Add row</strong> adds a transaction by hand. If the page is filtered to one account, a new row
+      starts on that account.</li>
+    <li>Dates are <span class="field-code">YYYY-MM-DD</span> (<span class="field-code">2026-1-9</span> is fine too).
+      Amounts accept commas.</li>
+    <li>The <strong>filtered total</strong> under the table sums what's shown; tick rows for a live
+      <strong>selected total</strong>.</li>
+  </ul>
+
+  <h4>Suggestions as you type</h4>
+  <ul>
+    <li><strong>Account</strong> and <strong>Category</strong> suggest matches; Tab fills the only one.</li>
+    <li><strong>Description</strong> suggests ones you've used before. Picking one also fills that row's empty
+      Category and Method with what you usually use for it — and on a new row, its usual Type.</li>
+  </ul>
+
+  <h3 id="duplicates">Duplicate flagging</h3>
+  <p>A row matching an existing one's account, date and amount is flagged <span
+    style="background:#ffe5ec; padding:2px 6px; border-radius:5px;">pink</span> — from an import, a new row, or an
+    edit. It's never dropped: two real transactions can share every field (two bus rides, same day, same fare).</p>
+  <ul>
+    <li>Right after saving, a pop-up asks: <strong>Continue</strong> (not a duplicate), <strong>Discard</strong>
+      (delete it), or <strong>Cancel</strong> (decide later).</li>
+    <li>Later: tick it and <strong>Save changes</strong> to confirm it, or <strong>Delete selected</strong>.
+      Editing the row also clears the flag.</li>
+  </ul>
+
+  <h3 id="categorization">Categorization &amp; "needs review"</h3>
+  <ol>
+    <li><strong>Rules</strong> (<span class="field-code">CATEGORY_RULES</span> in
+      <span class="field-code">src/categorize.py</span>) — fixed patterns, e.g. "transfer" → internal_transfer.</li>
+    <li><strong>Your bank's own category</strong>, where the CSV has one (mapped to these categories).</li>
+    <li><strong>A local classifier</strong> trained only on your own categorized history, on this computer. It
+      only guesses when reasonably confident; otherwise the category stays blank.</li>
+  </ol>
+  <ul>
+    <li>Anything filled in automatically is yellow ("needs review") until you edit or confirm it (tick + Save).</li>
+    <li>Each correction teaches the classifier — suggestions get better the more you categorize.
+      <strong>Suggest categories</strong> re-runs it on everything uncategorized.</li>
+  </ul>
+
+  <h3>Mark buttons and the IOU column</h3>
+  <ul>
+    <li><strong>Mark Not Mine / Mark Mine</strong> — see <a href="#not-mine">Not Mine</a>.</li>
+    <li>The <strong>IOU…</strong> menu (with the Person box) and the IOU column — see <a href="#ious">IOUs</a>.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="import-page">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Import</h2><span class="caption">Upload, preview, import</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <ol>
+    <li><strong>Add files:</strong> pick the account, choose the CSVs, Add files. (Or drop them in that account's
+      folder yourself.)</li>
+    <li><strong>Preview:</strong> reads every waiting file and shows what would be added — row counts, dates,
+      possible duplicates, and the first rows of each so you can check the signs. Nothing is saved.</li>
+    <li><strong>Import:</strong> adds the rows, suggests categories, and deletes each file that went in
+      cleanly.</li>
+  </ol>
+  <p>Wrong file? <strong>Remove</strong> deletes it without importing. More detail:
+    <a href="#importing">Importing statements</a>.</p>
+  </div>
+</details>
+
+<details class="card help-section" id="investments">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Investments</h2><span class="caption">Principal, deposits, snapshots, All entries</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p>Answers "how much do I have, and how much of it is growth" for each brokerage/retirement account. No
+    holdings, no live prices — numbers come from your statements, typed in now and then.</p>
+
+  <h3>The three numbers</h3>
+  <ul>
+    <li><strong>Principal</strong> — money you put in: deposits picked up from Transactions plus any
+      <strong>Principal added</strong> you type in.</li>
+    <li><strong>Current value</strong> — your last typed-in value, plus deposits since (at face value) until the
+      next one.</li>
+    <li><strong>Growth</strong> = value − principal; <strong>Growth %</strong> is growth as a share of
+      principal.</li>
+  </ul>
+
+  <h3>Deposits log themselves</h3>
+  <ol>
+    <li>On Transactions, give the transfer from your bank Type
+      <span class="field-code">investment_contribution</span>.</li>
+    <li>Name the account in its <strong>note</strong> — its full name or just its first word, any capitals (for
+      accounts named "Roth IRA" and "Brokerage": <span class="field-code">roth</span>,
+      <span class="field-code">brokerage</span>). If the note doesn't say, the description is checked too ("Transfer
+      to Roth IRA").</li>
+  </ol>
+  <p class="caption">Tip: give investment accounts distinctive first words, so a note is enough.</p>
+
+  <h3>"Investment transactions that need a look"</h3>
+  <p>Appears when a deposit names no account (or several), or a row has an Investment category but a different
+    Type. Fix the note on Transactions (the dropdown fills itself in when you come back), or pick from
+    <strong>Went to</strong> — including <strong>Not an investment</strong>. Then <strong>Save changes</strong>.</p>
+
+  <h3>Add a Snapshot</h3>
+  <ul>
+    <li><strong>Current value</strong> — what the statement says the account is worth that day (market moves
+      included). The same account + date again replaces it.</li>
+    <li><strong>Principal added</strong> — new money that isn't on Transactions (a transfer logged in both places
+      would count twice; you'll be asked if one looks like that).</li>
+  </ul>
+
+  <h3>Charts and panels</h3>
+  <ul>
+    <li>An Overview panel, then one folding panel per account, each with its own date range.</li>
+    <li>The timeline is to scale; Principal steps up on each deposit; the light-amber band is money held in CDs &amp;
+      bonds (from each one's opened date to maturity).</li>
+    <li><strong>All entries</strong> (bottom) lists everything behind the numbers; values and principal entries edit
+      in place.</li>
+  </ul>
+  </div>
+</details>
+
+<details class="card help-section" id="ious">
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>IOUs</h2><span class="caption">Who owes whom — family, roommates, friends</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+  <p>One running balance per person: <strong>what you owe them</strong>. Positive (red) = you owe them; negative
+    (green) = they owe you. It never changes net worth — it's a ledger beside it.</p>
+
+  <h3>Two directions</h3>
+  <ul>
+    <li><span class="iou-badge iou-badge-they_paid">They paid</span> — money or value from them to you: they paid
+      for something of yours, lent you money, or paid you back. Adds to what you owe them.</li>
+    <li><span class="iou-badge iou-badge-i_paid">I paid</span> — from you to them: you paid them back, lent them
+      money, or paid for something of theirs. Reduces it (below zero means they owe you).</li>
+  </ul>
+
+  <h3>Where entries come from</h3>
+  <ul>
+    <li><strong>Automatically:</strong> spending on an account set to <em>Someone else pays it</em> counts as
+      <em>They paid</em> for that person (unless marked Not Mine); a refund on it counts the other way.</li>
+    <li><strong>Marked by you:</strong> on Transactions, tick rows, type the person in the <strong>Person</strong>
+      box, and pick from the <strong>IOU…</strong> menu. <strong>Not an IOU</strong> opts a row out;
+      <strong>Reset to automatic</strong> undoes a choice. Nothing else is guessed — a transfer to a friend could be
+      a loan, a repayment or a gift.</li>
+    <li><strong>Manual entries</strong> on the IOUs page, for things with no transaction (cash, or they paid a bill
+      directly). Don't add one for something that is a transaction — mark the transaction instead.</li>
+  </ul>
+
+  <h3>The IOU column on Transactions</h3>
+  <ul>
+    <li>Shows each row's direction and person. Outlined = set by you; plain = automatic. Hover for the reason.</li>
+    <li>The <strong>IOUs</strong> filter lists only They paid, only I paid, or both.</li>
+  </ul>
+
+  <h3>Starting balance, and Settled / Pending marks</h3>
+  <ul>
+    <li><strong>Starting balance</strong> — "as of this date, the balance was exactly this much" (negative if they
+      owed you). Replaces everything for that person on or before it, so old history doesn't need entering.</li>
+    <li><strong>Mark Settled / Pending</strong> are <strong>reminders only</strong> — they never change a balance.
+      What changes it is the repayment itself, marked on Transactions.</li>
+  </ul>
+  </div>
+</details>
+
+{% endblock %}

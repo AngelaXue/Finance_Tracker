@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Overview · Finance Tracker{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.12.0/dist/chartjs-chart-sankey.min.js"></script>
+{% endblock %}
+{% block content %}
+{% from "_macros.html" import period_selector with context %}
+<h1>Overview</h1>
+
+{% if not setup.accounts or not setup.transactions %}
+<div class="card getting-started">
+  <h2>Getting started</h2>
+  <p class="caption">Four steps to your first real numbers. Everything stays on this computer.</p>
+  <ol class="setup-steps">
+    <li class="{{ 'done' if setup.accounts }}">
+      <strong>Add your accounts</strong> — checking, savings, cards, investments.
+      <a href="{{ url_for('net_worth') }}#add-account">Net Worth → Add Account</a>
+      {% if setup.accounts %}<span class="caption">({{ setup.accounts }} added ✓)</span>{% endif %}
+    </li>
+    <li class="{{ 'done' if setup.transactions }}">
+      <strong>Import statements</strong> — download a CSV from each bank's website and drop it on the
+      <a href="{{ url_for('import_page') }}">Import</a> page. Have years of history in a spreadsheet? That can come
+      in too (optional).
+    </li>
+    <li><strong>Review categories</strong> on <a href="{{ url_for('transactions') }}">Transactions</a> — yellow rows
+      were filled in automatically and need a quick look. Every correction makes the next suggestions better.</li>
+    <li><strong>Explore</strong> — Cash Flow, Spending, Investments. <a href="{{ url_for('help_page') }}">Help</a>
+      explains every rule.</li>
+  </ol>
+  {% if not DEMO %}<p class="caption">Want to look around first? Stop the app and run
+    <span class="field-code">python app.py --demo</span> to see it filled with fake data.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="stat-label">Net Worth</div>
+  <div class="hero-number">{{ fmt_money(net_worth.net_worth) }}</div>
+  <p class="caption">Leaves out investment accounts (brokerage, retirement) so this number stays steady
+    between your own updates instead of moving with the market. See
+    <a href="{{ url_for('net_worth') }}">Net Worth</a> for the full picture, investments included.</p>
+  <div style="height:320px;">
+    <canvas id="netWorthTrend"></canvas>
+  </div>
+  {{ period_selector(nw_period, [('all','All'), ('3mo','3M'), ('6mo','6M'), ('1yr','1Y'), ('5yr','5Y')], 'nw_', nw_min_date|default('')) }}
+</div>
+
+<div class="card">
+  <h2>Balances by Currency</h2>
+  <table>
+    <tr><th>Currency</th><th>Total</th></tr>
+    {% for currency, amount in currency_balances.by_currency.items() %}
+    <tr><td>{{ currency }}</td><td>{{ fmt_num(amount) }}</td></tr>
+    {% endfor %}
+    <tr class="subtotal"><td>Combined ({{ BASE_CURRENCY }})</td><td>{{ fmt_money(currency_balances.combined_base) }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Debts, Loans &amp; IOUs</h2>
+  {% if debts or ious %}
+  <table>
+    <tr><th>Account / person</th><th>Balance</th></tr>
+    {% for row in debts %}
+    <tr><td>{{ row.account.name }}</td><td class="amount-negative">{{ fmt_money(row.balance, currency_symbol(row.account.currency)) }}</td></tr>
+    {% endfor %}
+    {% for i in ious %}
+    <tr>
+      <td><a href="{{ url_for('ious', person=i.person) }}" class="row-link">
+        {% if i.balance > 0 %}You owe {{ i.person }}{% else %}{{ i.person }} owes you{% endif %}</a></td>
+      <td class="{{ 'amount-negative' if i.balance > 0 else 'amount-positive' }}">{{ fmt_money(i.balance|abs) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="caption">IOUs are shown for reference — they don't change net worth.</p>
+  {% else %}
+  <p class="caption">No credit card or loan balances, and no IOUs.</p>
+  {% endif %}
+</div>
+
+{% include "_period_selector.html" %}
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Money Allocation</h2>
+    <canvas id="allocationDonut"></canvas>
+  </div>
+  <div class="card">
+    <h2>Spending by Category</h2>
+    <canvas id="spendingDonut"></canvas>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Cash Flow — {{ period.label }}</h2>
+  <canvas id="sankeyChart" height="120"></canvas>
+  <p class="caption"><a href="{{ url_for('cash_flow') }}">View full Cash Flow →</a></p>
+</div>
+
+<script>
+const PASTEL = {{ PASTEL_COLORS|tojson }};
+
+const trendData = {{ trend|tojson }};
+
+function buildTrendLabels(trend) {
+  if (trend.length === 0) return [];
+  const first = new Date(trend[0].date);
+  const last = new Date(trend[trend.length - 1].date);
+  const spanMonths = (last.getFullYear() - first.getFullYear()) * 12 + (last.getMonth() - first.getMonth());
+  const monthly = spanMonths <= 18;
+  let lastYearShown = null;
+  return trend.map((d) => {
+    const dt = new Date(d.date);
+    if (monthly) return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const y = dt.getFullYear();
+    if (y !== lastYearShown) { lastYearShown = y; return String(y); }
+    return '';
+  });
+}
+
+// Brokerage-style crosshair: a vertical line at whichever data point is
+// currently active, drawn manually since Chart.js has no built-in
+// crosshair. Paired with interaction.mode:'index' below so it (and the
+// tooltip) track the mouse's x-position across the whole chart height,
+// not just when the cursor is exactly on the line.
+const crosshairPlugin = {
+  id: 'crosshair',
+  afterDraw(chart) {
+    const active = chart.tooltip && chart.tooltip._active;
+    if (!active || !active.length) return;
+    const x = active[0].element.x;
+    const { top, bottom } = chart.scales.y;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(20, 20, 18, 0.35)';
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
+new Chart(document.getElementById('netWorthTrend'), {
+  type: 'line',
+  data: {
+    labels: buildTrendLabels(trendData),
+    datasets: [{
+      data: trendData.map(d => d.net_worth),
+      borderColor: PASTEL[0],
+      backgroundColor: PASTEL[0] + '33',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 2,
+    }],
+  },
+  plugins: [crosshairPlugin],
+  options: {
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+        callbacks: {
+          title: (items) => {
+            const idx = items[0].dataIndex;
+            return new Date(trendData[idx].date).toLocaleDateString('en-US', {
+              month: 'short', day: 'numeric', year: 'numeric',
+            });
+          },
+          label: (ctx) => {
+            const idx = ctx.dataIndex;
+            const prev = trendData[idx - 1];
+            const delta = prev ? ctx.parsed.y - prev.net_worth : null;
+            let label = `Net Worth: ${MONEY_SYMBOL}${ctx.parsed.y.toLocaleString(undefined, MONEY_DIGITS)}`;
+            if (delta !== null) {
+              label += ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString(undefined, MONEY_DIGITS)})`;
+            }
+            return label;
+          },
+        },
+      },
+    },
+    scales: { y: { ticks: { callback: (v) => MONEY_SYMBOL + v.toLocaleString() } } },
+  },
+});
+
+const allocationLabels = {{ sankey.destinations|map(attribute='label')|list|tojson }};
+const allocationAmounts = {{ sankey.destinations|map(attribute='amount')|list|tojson }};
+new Chart(document.getElementById('allocationDonut'), {
+  type: 'doughnut',
+  data: {
+    labels: allocationLabels,
+    datasets: [{ data: allocationAmounts, backgroundColor: allocationLabels.map((_, i) => PASTEL[i % PASTEL.length]) }],
+  },
+});
+
+const spendingLabels = {{ spending|map(attribute='category')|list|tojson }};
+const spendingAmounts = {{ spending|map(attribute='amount')|list|tojson }};
+new Chart(document.getElementById('spendingDonut'), {
+  type: 'doughnut',
+  data: {
+    labels: spendingLabels,
+    datasets: [{ data: spendingAmounts, backgroundColor: spendingLabels.map((_, i) => PASTEL[i % PASTEL.length]) }],
+  },
+});
+
+const sankeyLinks = {{ sankey.links|tojson }};
+if (sankeyLinks.length) {
+  const nodeColor = (label) => PASTEL[Math.abs([...label].reduce((h, c) => h + c.charCodeAt(0), 0)) % PASTEL.length];
+  new Chart(document.getElementById('sankeyChart'), {
+    type: 'sankey',
+    data: {
+      datasets: [{
+        data: sankeyLinks.map(l => ({ from: l.from, to: l.to, flow: l.flow, pct: l.pct })),
+        colorFrom: (ctx) => nodeColor(ctx.dataset.data[ctx.dataIndex].from),
+        colorTo: (ctx) => nodeColor(ctx.dataset.data[ctx.dataIndex].to),
+      }],
+    },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const { from, to, flow, pct } = ctx.raw;
+              return `${from} → ${to}: ${MONEY_SYMBOL}${flow.toLocaleString(undefined, MONEY_DIGITS)} (${pct.toFixed(1)}% of income)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+</script>
+{% endblock %}

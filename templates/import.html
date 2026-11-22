@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Import · Finance Tracker{% endblock %}
+{% block content %}
+<h1>Import</h1>
+<p class="caption">Bring in transactions from the CSV files your bank's website lets you download. Nothing is sent
+  anywhere — files are read on this computer, then deleted once they're in. <a href="{{ url_for('help_page') }}#importing">More on importing</a></p>
+
+<div class="card" data-import-page>
+  <h2>1. Add statement files</h2>
+  {% if accounts %}
+  <form class="filters" data-import-upload-form>
+    <select name="account_id" required>
+      <option value="" disabled selected>Which account are they from?</option>
+      {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+    </select>
+    <input type="file" name="files" accept=".csv,text/csv" multiple required>
+    <button type="submit" class="btn btn-primary">Add files</button>
+  </form>
+  <p class="caption">Or drop them straight into the account's folder in
+    <span class="field-code">{{ incoming_dir }}</span> — there's one folder per account, named after it. File names
+    don't matter.</p>
+  {% else %}
+  <p class="caption">First, add the account the statements are for: <a href="{{ url_for('net_worth') }}#add-account">Net
+    Worth → Add Account</a>. Each account gets its own statements folder.</p>
+  {% endif %}
+
+  <h2 style="margin-top:20px;">2. Check, then import</h2>
+  {% if pending %}
+  <table class="nw-table import-files">
+    <tr><th>File</th><th>Account</th><th title="This app stores money going out as negative">Amount signs</th><th></th></tr>
+    {% for f in pending %}
+    <tr data-import-file="{{ f.name }}">
+      <td>{{ f.name.split('/')[-1] }}</td>
+      <td>{% if f.account %}{{ f.account.name }}{% else %}<span class="amount-negative-text">{{ f.error }}</span>{% endif %}</td>
+      <td>
+        {% if f.account %}
+        <select data-import-sign title="Auto: flips a card's file if purchases look positive">
+          <option value="auto">Auto</option>
+          <option value="asis">As in file</option>
+          <option value="flip">Flip all signs</option>
+        </select>
+        {% endif %}
+      </td>
+      <td><button type="button" class="btn btn-secondary btn-small" data-import-discard data-kind="statement"
+                  data-name="{{ f.name }}" title="Delete this file without importing it">Remove</button></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="save-controls">
+    <div class="save-controls-left">
+      <button type="button" class="btn btn-secondary" data-import-preview>Preview</button>
+      <button type="button" class="btn btn-primary" data-import-run>Import</button>
+    </div>
+  </div>
+  <div data-import-result></div>
+  <p class="caption"><strong>Preview</strong> reads every file and shows what would be added — nothing is saved.
+    <strong>Import</strong> adds the rows, suggests categories for review (yellow on Transactions), and deletes each
+    file that went in cleanly. A row that matches one already there is still added, highlighted pink, for you to
+    check.</p>
+  {% else %}
+  <p class="caption">No statements waiting.</p>
+  {% endif %}
+</div>
+
+<details class="card help-section" data-collapse-key="import-history" {{ 'open' if history }}>
+  <summary class="help-summary">
+    <span class="help-summary-text"><h2>Bring in older history (optional)</h2><span class="caption">Years of past
+      transactions from a spreadsheet or another app</span></span>
+    <span class="inv-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="help-body">
+    <p>Banks usually only offer a year or two of CSVs. If you've kept older records in a spreadsheet, reshape them
+      into this layout and bring them in once — it's safe to run again (rows already here are skipped).</p>
+    <ul class="ledger-tips">
+      <li><a href="{{ url_for('static', filename='examples/history_transactions.csv') }}" download>Transactions template</a>
+        — <span class="field-code">Date, Account, Amount</span> required (Amount negative = money out); Description,
+        Category, Type, Method, Note and Balance optional.</li>
+      <li><a href="{{ url_for('static', filename='examples/history_accounts.csv') }}" download>Accounts template</a>
+        (optional) — creates accounts that don't exist yet.</li>
+      <li><a href="{{ url_for('static', filename='examples/history_balances.csv') }}" download>Balances template</a>
+        (optional) — known balances on given dates.</li>
+      <li>A workbook (.xlsx) works too: sheets named Transactions, Accounts, Balances.</li>
+    </ul>
+    <form class="filters" data-history-upload-form>
+      <input type="file" name="files" accept=".csv,.xlsx" multiple required>
+      <button type="submit" class="btn btn-secondary">Add files</button>
+    </form>
+    {% if history %}
+    <table class="nw-table">
+      {% for name in history %}
+      <tr><td>{{ name }}</td>
+        <td><button type="button" class="btn btn-secondary btn-small" data-import-discard data-kind="history"
+                    data-name="{{ name }}">Remove</button></td></tr>
+      {% endfor %}
+    </table>
+    <div class="save-controls">
+      <div class="save-controls-left">
+        <button type="button" class="btn btn-secondary" data-history-preview>Preview</button>
+        <button type="button" class="btn btn-primary" data-history-run>Import history</button>
+      </div>
+    </div>
+    <div data-history-result></div>
+    {% else %}
+    <p class="caption">No history files waiting (they go in <span class="field-code">{{ history_dir }}</span>).</p>
+    {% endif %}
+  </div>
+</details>
+
+<div class="card">
+  <h2>Which banks work?</h2>
+  <ul class="caption ledger-tips">
+    <li><strong>Most of them.</strong> Any CSV with a date column and an amount column (or Debit / Credit columns) is
+      read automatically — Bank of America and Chase have dedicated readers.</li>
+    <li><strong>Look for</strong> "Download", "Export" or "Statements" on the account's page, and pick CSV (sometimes
+      called "Spreadsheet" or "Excel CSV"). Choose a date range that overlaps a little with your last import — overlaps
+      are flagged, not lost.</li>
+    <li><strong>Signs look wrong after Preview?</strong> (purchases showing as money in) — set that file to
+      <em>Flip all signs</em>. To make it permanent for that bank, describe its layout in
+      <span class="field-code">config/csv_formats.json</span> — see the README.</li>
+    <li><strong>Can't be read at all?</strong> Usually a day-first date or a file without a header row — the same
+      config file handles those.</li>
+  </ul>
+</div>
+{% endblock %}

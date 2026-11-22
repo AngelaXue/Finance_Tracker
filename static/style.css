@@ -1,0 +1,1415 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Pastel categorical palette (from @pastel-palette/tailwindcss, lightened
+     to a soft baby-pastel look) — general chart series only. Red/green
+     intentionally excluded; reserved for gain/loss below. */
+  --pastel-1: #ACDCF7; /* sky blue */
+  --pastel-2: #F5D0B0; /* peach */
+  --pastel-3: #B8E7E7; /* mint */
+  --pastel-4: #FFECAE; /* soft yellow */
+  --pastel-5: #FFC4E2; /* bubblegum pink */
+  --pastel-6: #CED1FF; /* lilac */
+
+  /* Reserved gain/loss pair — never used for general series. Text stays
+     deeper than the fills so delta/amount figures stay legible. */
+  --status-good-fill: #B6E3C7;
+  --status-bad-fill: #FCC3C4;
+  --status-good-text: #008126;
+  --status-bad-text: #D60009;
+
+  /* Range-picker selection state — this is UI interaction feedback (what's
+     selected right now), not chart-series data, so it's deliberately kept
+     out of the categorical palette above rather than reusing one of those
+     hues. Endpoint is darker than the in-between fill so the two clicked
+     months stay visually distinct from the range they bound. */
+  --range-inrange: #3676ad;
+  --range-endpoint: #0a5494;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f4f3f0;
+  color: #1c1c1e;
+  font-size: 14px;
+}
+
+/* .layout is pinned to exactly one viewport height (not min-height, which
+   would let it grow with .content and drag the sidebar's fixed-footer
+   Help link down with it) — .sidebar and .content each get their own
+   independent scrollbar within that fixed height, so a long page (e.g.
+   Help) never pushes Help itself out of view. */
+.layout {
+  display: flex;
+  height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+  width: 220px;
+  flex-shrink: 0;
+  background: #fbfaf8;
+  border-right: 1px solid rgba(20, 20, 18, 0.1);
+  padding: 24px 16px;
+}
+
+.sidebar-nav-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(20, 20, 18, 0.1);
+}
+
+.sidebar-brand {
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 24px;
+  padding: 0 12px;
+}
+
+.sidebar-nav {
+  list-style: none;
+}
+
+.sidebar-nav li a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.sidebar-nav li a:hover {
+  background: rgba(20, 20, 18, 0.06);
+}
+
+.sidebar-nav li a.active {
+  background: #1c1c1e;
+  color: #fff;
+}
+
+.content {
+  flex: 1;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 32px 40px;
+  max-width: 1200px;
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 20px;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* Cards / grid */
+.card {
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.1);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.1);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #6b6b68;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.delta-positive { color: var(--status-good-text); }
+.delta-negative { color: var(--status-bad-text); }
+
+.hero-number {
+  font-size: 40px;
+  font-weight: 700;
+  margin: 8px 0;
+}
+
+/* Period selector */
+/* Investments: Overview, then one identical panel per account */
+.inv-panel {
+  background: #ebe9e3;
+  border-radius: 16px;
+  padding: 18px 18px 2px;
+  margin-bottom: 22px;
+}
+
+.inv-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.inv-panel-header h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+/* <details> panels: the header is the click target; hide the default marker */
+summary.inv-panel-header {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  align-items: center;
+}
+
+summary.inv-panel-header::-webkit-details-marker {
+  display: none;
+}
+
+details.inv-panel:not([open]) {
+  padding-bottom: 4px;
+}
+
+details:not([open]) > summary.inv-panel-header {
+  margin-bottom: 14px;
+}
+
+.inv-panel-peek {
+  font-size: 14px;
+  font-weight: 600;
+  color: #48484a;
+}
+
+.inv-panel-peek span {
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+.inv-chevron {
+  margin-left: auto;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #8e8e93;
+  border-bottom: 2px solid #8e8e93;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+
+details:not([open]) > summary .inv-chevron {
+  transform: rotate(-45deg);
+}
+
+.inv-cards {
+  margin-bottom: 16px;
+}
+
+.inv-panel-period .period-selector {
+  margin-bottom: 14px;
+}
+
+/* All entries table */
+details.inv-entries > summary.inv-panel-header {
+  margin-bottom: 0;
+}
+
+details.inv-entries[open] > summary.inv-panel-header {
+  margin-bottom: 14px;
+}
+
+.inv-source {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--pastel-1);
+  white-space: nowrap;
+}
+
+.inv-source-manual {
+  background: var(--pastel-4);
+}
+
+.inv-source-deposit {
+  background: var(--pastel-3);
+}
+
+tr.inv-entry-muted td {
+  color: #8e8e93;
+}
+
+.inv-entries-table input[type="date"] {
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.inv-entries-table input:hover, .inv-entries-table select:hover {
+  border-color: rgba(20, 20, 18, 0.15);
+}
+
+.inv-entries-table input.inv-entry-note {
+  min-width: 160px;
+  color: #48484a;
+}
+
+.inv-entry-assign {
+  margin-top: 4px;
+  display: inline-block;
+  border-radius: 6px;
+}
+
+.inv-entry-assign.cd-edited {
+  background: #FFF6D6;
+  padding: 2px;
+}
+
+/* Investments page: every table's buttons sit top-right, above the table */
+.save-controls.inv-assign-controls,
+.save-controls.cd-controls-top {
+  justify-content: flex-end;
+  align-items: center;
+  padding-bottom: 12px;
+}
+
+/* Shared CD table, buttons below (Net Worth) */
+.save-controls.cd-controls-bottom {
+  padding-top: 12px;
+}
+
+/* All entries: ~15–20 rows tall, scrolls inside; header row stays put */
+.inv-entries-scroll {
+  max-height: 680px;
+  overflow-y: auto;
+  border: 1px solid rgba(20, 20, 18, 0.08);
+  border-radius: 10px;
+}
+
+.inv-entries-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: inset 0 -1px 0 rgba(20, 20, 18, 0.1);
+}
+
+.inv-entries-scroll + .caption {
+  margin-top: 10px;
+}
+
+select.inv-assign {
+  border: 1px solid rgba(20, 20, 18, 0.15);
+  background: #fff;
+  padding: 4px 6px;
+  font-size: 12px;
+  width: auto;
+}
+
+@media (max-width: 900px) {
+  .inv-cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+.inv-allocation {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(20, 20, 18, 0.08);
+}
+
+.cash-flow-notes {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(20, 20, 18, 0.08);
+  line-height: 1.55;
+}
+
+.cash-flow-notes ul {
+  margin: 6px 0 8px;
+}
+
+.pass-through-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 20px;
+}
+
+/* On/off switch — a link underneath, so it keeps the page's other params */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: inherit;
+  text-decoration: none;
+  user-select: none;
+}
+
+.switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(20, 20, 18, 0.18);
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.switch.on .switch-track { background: var(--range-inrange); }
+.switch.on .switch-knob { transform: translateX(14px); }
+.switch:hover .switch-track { filter: brightness(0.95); }
+
+/* Small (i) with a hover/focus tooltip */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(20, 20, 18, 0.3);
+  color: #6b6b70;
+  font-size: 10px;
+  font-weight: 600;
+  font-style: italic;
+  font-family: Georgia, serif;
+  cursor: help;
+}
+
+.info-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #2c2c2e;
+  color: #fff;
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.info-tip:hover::after,
+.info-tip:focus::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.period-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.period-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(20, 20, 18, 0.15);
+  color: inherit;
+  text-decoration: none;
+  font-size: 13px;
+  background: #fff;
+}
+
+.period-btn.active {
+  background: #1c1c1e;
+  color: #fff;
+  border-color: #1c1c1e;
+}
+
+/* Range picker (single dropdown, click-start/click-end month grid) */
+.range-picker {
+  position: relative;
+}
+
+.range-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.12);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(20, 20, 18, 0.14);
+  width: 240px;
+}
+
+/* Account / Description autocomplete on Transactions (see initSuggestions) */
+.suggest-box {
+  position: fixed;
+  z-index: 50;
+  max-width: 420px;
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 20, 18, 0.14);
+  padding: 4px;
+  font-size: 13px;
+}
+
+.suggest-item {
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggest-item:hover,
+.suggest-item.active {
+  background: rgba(20, 20, 18, 0.07);
+}
+
+.range-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.range-panel-header button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.range-panel-header button:hover {
+  background: rgba(20, 20, 18, 0.06);
+}
+
+.range-panel-header button:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
+}
+
+.range-months {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.range-month {
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(20, 20, 18, 0.05);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.range-month:hover:not(:disabled) {
+  background: rgba(20, 20, 18, 0.12);
+}
+
+.range-month-disabled {
+  color: rgba(20, 20, 18, 0.28);
+  cursor: not-allowed;
+  background: transparent;
+}
+
+.range-month-inrange {
+  background: var(--range-inrange);
+  color: #fff;
+}
+
+.range-month-endpoint {
+  background: var(--range-endpoint);
+  color: #fff;
+  font-weight: 700;
+}
+
+.range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.range-actions .btn {
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
+.range-actions [data-range-done]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(20, 20, 18, 0.08);
+}
+
+th {
+  font-weight: 600;
+  color: #6b6b68;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tr.subtotal td {
+  font-weight: 700;
+  border-top: 2px solid rgba(20, 20, 18, 0.15);
+}
+
+td.amount-positive { color: var(--status-good-text); }
+td.amount-negative { color: var(--status-bad-text); }
+
+/* Net Worth table */
+.nw-table td.num, .nw-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nw-table .nw-institution {
+  color: #6b6b68;
+}
+
+.nw-table .nw-account,
+.nw-table .nw-balance {
+  font-weight: 700;
+}
+
+.nw-source {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(20, 20, 18, 0.06);
+  color: #6b6b68;
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* CD table inline editing — inputs blend into the cells until hovered/focused */
+.cd-table input[type="text"],
+.cd-table input[type="date"],
+.cd-table select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 3px 4px;
+  font: inherit;
+  border-radius: 5px;
+}
+
+.cd-table input.num {
+  text-align: right;
+}
+
+.cd-table input:hover,
+.cd-table select:hover,
+.cd-table input:focus,
+.cd-table select:focus {
+  border-color: rgba(20, 20, 18, 0.2);
+  background: #fff;
+}
+
+.cd-table td.cd-edited {
+  background: #FFF6D6;
+}
+
+.nw-table .nw-group-row td {
+  background: rgba(20, 20, 18, 0.04);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: #6b6b68;
+}
+
+.nw-table .nw-total-row td {
+  font-weight: 700;
+  border-top: 2px solid rgba(20, 20, 18, 0.15);
+}
+
+
+a.row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.row-link:hover {
+  text-decoration: underline;
+}
+
+/* Bars */
+.bar-row {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.bar-row-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.bar-row-link:hover {
+  background: rgba(20, 20, 18, 0.05);
+}
+
+.bar-row-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.bar-track {
+  height: 8px;
+  background: rgba(20, 20, 18, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--pastel-1);
+  border-radius: 4px;
+}
+
+/* Filters / forms */
+.filters-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filters select, .filters input[type="text"] {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 20, 18, 0.15);
+  font-size: 13px;
+}
+
+.filters input[type="text"] {
+  min-width: 200px;
+}
+
+/* The browser's own date box, brought in line with the text fields. The
+   calendar pop-up itself is the browser's and can't be restyled. */
+.filters input[type="date"] {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 20, 18, 0.15);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  min-height: 33px;
+}
+
+.filters input[type="date"]:focus,
+.filters input[type="text"]:focus,
+.filters select:focus {
+  outline: none;
+  border-color: var(--range-inrange);
+  box-shadow: 0 0 0 3px rgba(54, 118, 173, 0.15);
+}
+
+.filters input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.filters input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.8;
+}
+
+.filters input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+table input[type="text"], table select, table textarea {
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 6px;
+  width: 100%;
+}
+
+table input[type="text"]:hover, table select:hover, table textarea:hover,
+table input[type="text"]:focus, table select:focus, table textarea:focus {
+  border-color: rgba(20, 20, 18, 0.2);
+  background: #fff;
+}
+
+table textarea {
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  display: block;
+}
+
+.table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.table-summary {
+  display: flex;
+  gap: 24px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(20, 20, 18, 0.1);
+  background: #fbfaf8;
+  font-size: 13px;
+}
+
+.table-scroll {
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.transactions-table {
+  table-layout: fixed;
+}
+
+.transactions-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fbfaf8;
+  box-shadow: 0 1px 0 rgba(20, 20, 18, 0.1);
+}
+
+.transactions-table td {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
+}
+
+.transactions-table tr.needs-review {
+  background: var(--pastel-4);
+}
+
+.transactions-table tr.needs-review input[type="text"],
+.transactions-table tr.needs-review textarea,
+.transactions-table tr.needs-review select {
+  background: transparent;
+}
+
+/* Possible duplicate (same account/date/amount as an existing row, at
+   CSV-import time) — never silently skipped since it could be a second
+   real transaction (e.g. two bus rides the same day), so it's inserted
+   and flagged instead. Distinct color from needs-review so the two
+   don't read as the same kind of flag; wins over needs-review's
+   background when a row is somehow both, since a possible duplicate is
+   the more urgent thing to check. Clears on edit or on confirm (select +
+   Save), same as needs-review. */
+.transactions-table tr.flagged-duplicate {
+  background: #ffe5ec;
+}
+
+.transactions-table tr.flagged-duplicate input[type="text"],
+.transactions-table tr.flagged-duplicate textarea,
+.transactions-table tr.flagged-duplicate select {
+  background: transparent;
+}
+
+/* Pinned right below the sticky header (see updateNewRowStickyOffsets in
+   app.js) so a newly-added row stays reachable while scrolling through
+   history below it — no need to keep jumping back to the top. Sticky is
+   set per-cell, not on the <tr> (unreliable across browsers on table
+   rows), matching the header's own approach; --new-row-sticky-top is set
+   once per row in JS and shared by all its cells via inheritance. The
+   background must be fully opaque now that this floats over scrolling
+   rows underneath it. */
+.transactions-table tr.new-row td {
+  position: sticky;
+  top: var(--new-row-sticky-top, 0px);
+  z-index: 4;
+  background: color-mix(in srgb, var(--pastel-1) 20%, white);
+}
+
+/* Not attributable to the user (e.g. a gift/purchase made on someone
+   else's behalf) — excluded from Cash Flow's income comparison, but still
+   fully counted in Spending's category breakdown. A left accent bar keeps
+   this legible layered on top of needs-review's yellow background too,
+   rather than fighting it for the same background color. */
+.transactions-table tr.not-attributable {
+  border-left: 3px solid rgba(20, 20, 18, 0.35);
+}
+
+.transactions-table tr.not-attributable td:not(:first-child) {
+  font-style: italic;
+}
+
+.btn-remove-new {
+  border: none;
+  background: transparent;
+  color: var(--status-bad-text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.btn-remove-new:hover {
+  background: var(--status-bad-fill);
+}
+
+.transactions-table input.amount-positive { color: var(--status-good-text); }
+.transactions-table input.amount-negative { color: var(--status-bad-text); }
+
+.save-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.save-controls-left, .save-controls-right {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-add-row {
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.btn-save {
+  background: rgba(20, 20, 18, 0.08);
+  color: rgba(20, 20, 18, 0.35);
+  cursor: not-allowed;
+}
+
+.btn-save:not(:disabled) {
+  background: #1c1c1e;
+  color: #fff;
+  cursor: pointer;
+}
+
+.save-controls .btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-primary {
+  background: #1c1c1e;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: rgba(20, 20, 18, 0.08);
+  color: #1c1c1e;
+}
+
+.btn-danger {
+  background: var(--status-bad-fill);
+  color: var(--status-bad-text);
+}
+
+/* Custom modal — used where a native confirm()'s two buttons aren't
+   enough (e.g. the duplicate-entry prompt needs three genuinely
+   different answers: continue, discard, or decide later). */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 18, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 440px;
+  box-shadow: 0 12px 32px rgba(20, 20, 18, 0.25);
+}
+
+.modal-box h3 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.modal-box p {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.caption {
+  font-size: 12px;
+  color: #6b6b68;
+  margin-top: 8px;
+}
+
+/* Help page */
+.field-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(20, 20, 18, 0.06);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+/* Help: Expand all / Collapse all, above the sections */
+.help-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+/* "General" / "By page" labels between the two groups of sections */
+.help-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b6b70;
+  margin: 22px 2px 10px;
+}
+
+.help-group-label span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+/* Inside a page section: topics are h3 (some carry old #anchors), their
+   sub-points h4 */
+.help-body h3[id] {
+  scroll-margin-top: 20px;
+}
+
+.help-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #48484a;
+  margin: 14px 0 6px;
+}
+
+/* Help sections: FAQ-style, folded down to their header */
+.help-section {
+  scroll-margin-top: 20px;
+  margin-bottom: 12px;
+}
+
+.help-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.help-summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.help-summary-text h2 {
+  margin: 0;
+}
+
+.help-summary .inv-chevron {
+  margin-left: auto;
+}
+
+.help-section[open] > .help-summary {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(20, 20, 18, 0.08);
+}
+
+/* Briefly highlight the section a menu link jumped to */
+.help-section.help-flash {
+  box-shadow: 0 0 0 3px rgba(54, 118, 173, 0.35);
+  transition: box-shadow 0.6s ease;
+}
+
+.help-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 20px 0 6px;
+}
+
+.help-section p,
+.help-section ul,
+.help-section ol {
+  line-height: 1.55;
+  margin: 0 0 10px;
+}
+
+/* The global reset strips list padding, which left markers hanging past the
+   card's text edge — give help lists their own indent and a softer marker. */
+.help-section ul {
+  list-style: none;
+  padding-left: 18px;
+}
+
+.help-section ul > li {
+  position: relative;
+}
+
+.help-section ul > li::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8fb3cf;
+}
+
+.help-section ol {
+  padding-left: 22px;
+}
+
+.help-section ol > li::marker {
+  color: #6b6b70;
+  font-weight: 600;
+}
+
+.help-section li {
+  margin-bottom: 7px;
+}
+
+.help-section li:last-child {
+  margin-bottom: 0;
+}
+
+.help-section table {
+  margin-top: 4px;
+}
+
+.help-section table th, .help-section table td {
+  vertical-align: top;
+}
+
+/* IOU column on Transactions + the IOUs page */
+.iou-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.iou-badge-they_paid {
+  background: #FCC3C4;
+}
+
+.iou-badge-i_paid {
+  background: #B6E3C7;
+}
+
+/* Set by hand rather than by the automatic rule */
+.iou-badge-manual {
+  outline: 1px solid rgba(20, 20, 18, 0.35);
+}
+
+.ledger-tips {
+  padding-left: 18px;
+}
+
+.stat-value.stat-bad, .amount-negative-text { color: var(--status-bad-text); }
+.stat-value.stat-good, .amount-positive-text { color: var(--status-good-text); }
+
+/* They paid | I paid side by side; stacks once the two would get cramped */
+.ledger-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 1150px) {
+  .ledger-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ledger-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 16px 10px;
+}
+
+.ledger-panel-head h2 {
+  margin: 0 0 4px;
+}
+
+.ledger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ledger-split .table-scroll {
+  max-height: 60vh;
+}
+
+.ledger-split td.num, .ledger-split th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ledger-date {
+  white-space: nowrap;
+}
+
+.ledger-from {
+  margin-top: 2px;
+}
+
+.settle-badge-pending {
+  background: #FFECAE;
+}
+
+.settle-badge-settled {
+  background: #B6E3C7;
+}
+
+/* Settled = already handled, so it recedes */
+.ledger-settled td {
+  opacity: 0.55;
+}
+
+.ledger-starting-balance td {
+  background: rgba(20, 20, 18, 0.03);
+}
+
+.help-icon {
+  color: #6b6b68;
+  text-decoration: none;
+  font-weight: 400;
+  margin-left: 3px;
+}
+
+.help-icon:hover {
+  color: #1c1c1e;
+}
+
+.sparkline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(20, 20, 18, 0.06);
+}
+
+.sparkline-row canvas {
+  width: 100px !important;
+  height: 30px !important;
+}
+
+.iou-person {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.iou-person-input {
+  padding: 7px 10px;
+  border: 1px solid rgba(20, 20, 18, 0.15);
+  border-radius: 8px;
+  font-size: 13px;
+  width: 120px;
+}
+
+/* IOUs page: one card per person, the open one outlined */
+.iou-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.iou-person-card {
+  color: inherit;
+  text-decoration: none;
+}
+
+.iou-person-card:hover {
+  border-color: rgba(20, 20, 18, 0.35);
+}
+
+.iou-person-card.active {
+  outline: 2px solid #1c1c1e;
+}
+
+.iou-person-balance {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Demo mode (python app.py --demo) */
+.demo-badge {
+  display: inline-block;
+  margin: -16px 12px 16px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pastel-4);
+  font-size: 12px;
+}
+
+.demo-banner {
+  background: var(--pastel-4);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+
+/* Overview's first-run checklist */
+.getting-started {
+  border-color: var(--pastel-1);
+  border-width: 2px;
+}
+
+.setup-steps {
+  padding-left: 20px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+
+.setup-steps li.done {
+  color: #6b6b68;
+}
+
+/* Import page */
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.import-files td {
+  vertical-align: middle;
+}
+
+.import-file-result {
+  border-top: 1px solid rgba(20, 20, 18, 0.08);
+  padding: 10px 0;
+}
+
+.import-file-result.import-error {
+  color: var(--status-bad-text);
+}
+
+.import-sample {
+  margin-top: 8px;
+  font-size: 12px;
+}

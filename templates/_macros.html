@@ -1,0 +1,31 @@
+{% macro period_selector(period, presets, param_prefix='', min_date='') %}
+<div class="period-selector">
+  {% for preset, label in presets %}
+    <a href="{{ merge_query({param_prefix ~ 'period': preset}) }}" class="period-btn {{ 'active' if period.preset == preset else '' }}">{{ label }}</a>
+  {% endfor %}
+  <div class="range-picker" data-range-picker
+       data-period-param="{{ param_prefix }}period"
+       data-start-param="{{ param_prefix }}start"
+       data-end-param="{{ param_prefix }}end"
+       data-min-date="{{ min_date or '' }}"
+       data-initial-start="{{ period.start if period.preset == 'custom' else '' }}"
+       data-initial-end="{{ period.end if period.preset == 'custom' else '' }}">
+    <button type="button" class="period-btn range-trigger {{ 'active' if period.preset == 'custom' else '' }}" data-range-trigger>
+      {{ period.label if period.preset == 'custom' else 'Custom Range' }}
+    </button>
+    <div class="range-panel" data-range-panel hidden>
+      <div class="range-panel-header">
+        <button type="button" data-range-prev-year aria-label="Previous year">‹</button>
+        <span data-range-year-label></span>
+        <button type="button" data-range-next-year aria-label="Next year">›</button>
+      </div>
+      <div class="range-months" data-range-months></div>
+      <p class="caption" data-range-hint>Click a month to start, then click another to set the end.</p>
+      <div class="range-actions">
+        <button type="button" class="btn btn-secondary" data-range-clear>Clear</button>
+        <button type="button" class="btn btn-primary" data-range-done disabled>Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Spending · Finance Tracker{% endblock %}
+{% block content %}
+<h1>Spending</h1>
+
+{% include "_period_selector.html" %}
+
+<div class="pass-through-toggle">
+  <a href="{{ merge_query({'pass_through': 'exclude' if include_pass_through else 'include'}) }}"
+     class="switch {{ 'on' if include_pass_through }}" role="switch"
+     aria-checked="{{ 'true' if include_pass_through else 'false' }}">
+    <span class="switch-track"><span class="switch-knob"></span></span>
+    Include pass-through
+  </a>
+  <span class="info-tip" tabindex="0" aria-label="About pass-through"
+        data-tip="Rows with the Pass-Through category — money that came in and went right back out (e.g. work reimbursements). Off by default, since it isn't really your spending.">i</span>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>By Category — {{ period.label }}</h2>
+    {% for row in breakdown %}
+    <a href="{{ url_for('transactions', category=row.category, period='custom', start=period.start, end=period.end) }}" class="bar-row bar-row-link">
+      <div class="bar-row-label">
+        <span>{{ row.category }}</span>
+        <span>
+          {{ fmt_money(row.amount) }} ({{ "%.1f"|format(row.pct) }}%)
+          {% if row.mom_change > 0 %}
+            <span class="delta-negative">+{{ fmt_money(row.mom_change) }} MoM
+              {%- if row.mom_pct is not none %} (+{{ "%.0f"|format(row.mom_pct) }}%){% else %} (New){% endif %}</span>
+          {% elif row.mom_change < 0 %}
+            <span class="delta-positive">{{ fmt_money(row.mom_change) }} MoM ({{ "%.0f"|format(row.mom_pct) }}%)</span>
+          {% else %}
+            <span>—</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width: {{ row.pct }}%; background: {{ PASTEL_COLORS[loop.index0 % (PASTEL_COLORS|length)] }}"></div></div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Composition</h2>
+    <canvas id="compositionDonut"></canvas>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Trailing Trend by Category</h2>
+  {% for row in breakdown %}
+  <a href="{{ url_for('transactions', category=row.category, period='custom', start=period.start, end=period.end) }}" class="sparkline-row bar-row-link">
+    <div style="width:140px;">{{ row.category }}</div>
+    <canvas id="sparkline-{{ loop.index }}"></canvas>
+  </a>
+  {% endfor %}
+</div>
+
+<script>
+const PASTEL = {{ PASTEL_COLORS|tojson }};
+const labels = {{ breakdown|map(attribute='category')|list|tojson }};
+const amounts = {{ breakdown|map(attribute='amount')|list|tojson }};
+const periodStart = {{ period.start|tojson }};
+const periodEnd = {{ period.end|tojson }};
+const compositionDonut = new Chart(document.getElementById('compositionDonut'), {
+  type: 'doughnut',
+  data: { labels, datasets: [{ data: amounts, backgroundColor: labels.map((_, i) => PASTEL[i % PASTEL.length]) }] },
+  options: {
+    onClick: (evt, elements) => {
+      if (!elements.length) return;
+      const category = labels[elements[0].index];
+      const params = new URLSearchParams({ category, start: periodStart, end: periodEnd });
+      window.location.href = '/transactions?' + params.toString();
+    },
+    onHover: (evt, elements) => {
+      evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+    },
+  },
+});
+
+const sparklines = {{ breakdown|map(attribute='sparkline')|list|tojson }};
+sparklines.forEach((points, i) => {
+  const el = document.getElementById('sparkline-' + (i + 1));
+  if (!el) return;
+  new Chart(el, {
+    type: 'line',
+    data: {
+      labels: points.map(p => p.month),
+      datasets: [{
+        data: points.map(p => p.amount),
+        borderColor: PASTEL[i % PASTEL.length],
+        pointRadius: 0,
+        tension: 0.3,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  });
+});
+</script>
+{% endblock %}

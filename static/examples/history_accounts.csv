@@ -1,0 +1,5 @@
+Name,Institution,Type,Currency,Owner,Paid By
+Everyday Checking,Demo Bank,checking,USD,self,
+Rewards Card,Demo Card Co,credit_card,USD,self,
+Roth IRA,Demo Brokerage,retirement,USD,self,
+Family Card,Demo Bank,credit_card,USD,other,Mom

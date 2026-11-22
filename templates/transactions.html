@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% from "_macros.html" import period_selector with context %}
+{% block title %}Transactions · Finance Tracker{% endblock %}
+{% block content %}
+<h1>Transactions</h1>
+
+{{ period_selector(period, [('month','This Month'), ('all','All')], '', min_date|default('')) }}
+
+<div class="filters-row">
+  <form class="filters" method="get">
+    {% if period.preset %}<input type="hidden" name="period" value="{{ period.preset }}">{% endif %}
+    {% if period.preset == 'custom' %}
+    <input type="hidden" name="start" value="{{ period.start }}">
+    <input type="hidden" name="end" value="{{ period.end }}">
+    {% endif %}
+    <select name="year">
+      <option value="">Year</option>
+      {% for y in years %}<option value="{{ y }}" {{ 'selected' if filters.year == y }}>{{ y }}</option>{% endfor %}
+    </select>
+    <select name="month">
+      <option value="">Month</option>
+      {% for m in range(1, 13) %}
+      <option value="{{ '%02d'|format(m) }}" {{ 'selected' if filters.month == '%02d'|format(m) }}>{{ '%02d'|format(m) }}</option>
+      {% endfor %}
+    </select>
+    <select name="account_id">
+      <option value="">Account</option>
+      {% for a in accounts %}
+      <option value="{{ a.id }}" {{ 'selected' if filters.account_id == a.id|string }}>{{ a.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="category">
+      <option value="">Category</option>
+      <option value="Uncategorized" {{ 'selected' if filters.category == 'Uncategorized' }}>Uncategorized</option>
+      {% for c in categories %}
+      <option value="{{ c }}" {{ 'selected' if filters.category == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <select name="review">
+      <option value="">All rows</option>
+      <option value="needs_review" {{ 'selected' if filters.review == 'needs_review' }}>Needs Review ({{ needs_review_count }})</option>
+    </select>
+    <select name="attributable">
+      <option value="">Mine + Not Mine</option>
+      <option value="1" {{ 'selected' if filters.attributable == '1' }}>Mine only</option>
+      <option value="0" {{ 'selected' if filters.attributable == '0' }}>Not Mine only</option>
+    </select>
+    <select name="iou">
+      <option value="">IOUs: any</option>
+      <option value="any" {{ 'selected' if filters.iou == 'any' }}>IOUs only</option>
+      <option value="they_paid" {{ 'selected' if filters.iou == 'they_paid' }}>IOUs: they paid</option>
+      <option value="i_paid" {{ 'selected' if filters.iou == 'i_paid' }}>IOUs: I paid</option>
+    </select>
+    <input type="text" name="q" placeholder="Search description or note" value="{{ filters.q or '' }}">
+    <button type="submit" class="btn btn-secondary">Filter</button>
+    <a href="{{ url_for('transactions') }}" class="btn btn-secondary">Clear</a>
+  </form>
+
+  <div class="save-controls">
+    <div class="save-controls-left">
+      <button class="btn btn-secondary btn-add-row" data-add-row-btn>+ Add row</button>
+      <button class="btn btn-secondary" data-suggest-btn>Suggest categories ({{ needs_review_count }} pending)</button>
+    </div>
+    <div class="save-controls-right">
+      <button class="btn btn-secondary" data-delete-btn disabled>Delete selected</button>
+      <button class="btn btn-secondary" data-set-attributable-btn data-value="0" disabled
+              title="Not your own money (e.g. a purchase someone else paid for as a gift): left out of Cash Flow and automatic IOUs — still shown in Spending's categories.">
+        Mark Not Mine
+      </button>
+      <button class="btn btn-secondary" data-set-attributable-btn data-value="1" disabled
+              title="Undo Not Mine for the selected transactions.">
+        Mark Mine
+      </button>
+      <input type="text" class="iou-person-input" data-iou-person list="iou-people" placeholder="Person"
+             autocomplete="off" disabled title="Who the IOU is with — needed for They paid / I paid">
+      <select class="btn btn-secondary" data-iou-select disabled
+              title="Count the selected transactions on the IOUs page — money between you and a person">
+        <option value="">IOU…</option>
+        <option value="they_paid">They paid (for me / me back)</option>
+        <option value="i_paid">I paid (for them / them back)</option>
+        <option value="none">Not an IOU</option>
+        <option value="auto">Reset to automatic</option>
+      </select>
+      <button class="btn btn-secondary" data-discard-btn disabled>Discard</button>
+      <button class="btn btn-save" data-save-btn disabled>Save changes</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="suggestion-data">{{ suggestions|tojson }}</script>
+<datalist id="iou-people">{% for p in people %}<option value="{{ p }}">{% endfor %}</datalist>
+
+<datalist id="method-options">
+  {% for m in methods %}<option value="{{ m }}">{% endfor %}
+</datalist>
+
+<div class="card table-card">
+  <div class="table-scroll">
+    <table data-transactions-table class="transactions-table">
+      <colgroup>
+        <col style="width:3%">
+        <col style="width:9%"><col style="width:8%"><col style="width:8%">
+        <col style="width:20%"><col style="width:9%"><col style="width:8%">
+        <col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:11%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th><input type="checkbox" data-select-all title="Select all rows"></th>
+          <th>Date</th><th>Account</th><th>Method</th><th>Description</th><th>Category</th>
+          <th>Type <a href="{{ url_for('help_page') }}#type-vs-category" class="help-icon" title="What's the difference between Type and Category?">ⓘ</a></th>
+          <th>Amount</th><th>Running Balance</th>
+          <th>IOU <a href="{{ url_for('help_page') }}#ious" class="help-icon" title="How does the IOU column work?">ⓘ</a></th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody data-transactions-body>
+        {% for t in rows %}
+        {% set needs_attention = t.category_predicted or (not t.category and t.transaction_type not in ('internal_transfer', 'personal_transfer')) %}
+        <tr class="{{ 'flagged-duplicate' if t.flagged_duplicate else ('needs-review' if needs_attention else '') }} {{ 'not-attributable' if not t.attributable_to_user else '' }}">
+          <td><input type="checkbox" data-row-id="{{ t.id }}" title="{{ 'Select this row (currently: Not Mine — excluded from Cash Flow)' if not t.attributable_to_user else 'Select this row' }}"></td>
+          <td><input type="text" data-field="date" data-id="{{ t.id }}" value="{{ t.date }}"></td>
+          <td><textarea rows="1" data-field="account_name" data-id="{{ t.id }}">{{ t.account_name }}</textarea></td>
+          <td><input type="text" data-field="method" data-id="{{ t.id }}" value="{{ t.method or '' }}" list="method-options" placeholder="—"></td>
+          <td><textarea rows="1" data-field="description" data-id="{{ t.id }}">{{ t.description or '' }}</textarea></td>
+          <td><input type="text" data-field="category" data-id="{{ t.id }}" value="{{ t.category or '' }}" autocomplete="off" placeholder="Uncategorized"></td>
+          <td>
+            <select data-field="transaction_type" data-id="{{ t.id }}" title="{{ type_hints.get(t.transaction_type, '') }}">
+              {% for tt in transaction_types %}
+              <option value="{{ tt }}" title="{{ type_hints[tt] }}" {{ 'selected' if t.transaction_type == tt }}>{{ tt }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input type="text" data-field="amount" data-id="{{ t.id }}" value="{{ fmt_num(t.amount) }}"
+                   class="{{ 'amount-positive' if t.amount >= 0 else 'amount-negative' }}"> {{ t.currency }}
+          </td>
+          <td>{{ fmt_num(running_balances.get(t.id, 0)) }}</td>
+          <td>
+            {% set st = iou_statuses.get(t.id) %}
+            {% if st %}
+            <span class="iou-badge iou-badge-{{ st.kind }} {{ 'iou-badge-manual' if st.reason == 'manual' }}"
+                  title="{{ 'Set by you' if st.reason == 'manual' else 'Automatic: spending on an account ' ~ st.person ~ ' pays' }} — {{ 'they paid' if st.kind == 'they_paid' else 'you paid' }}">
+              {{ 'They paid' if st.kind == 'they_paid' else 'I paid' }}</span>
+            <div class="caption iou-person">{{ st.person }}</div>
+            {% elif t.iou_kind == 'none' %}
+            <span class="caption" title="Set by you: not an IOU">—</span>
+            {% endif %}
+          </td>
+          <td><textarea rows="1" data-field="note" data-id="{{ t.id }}">{{ t.note or '' }}</textarea></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-summary">
+    <span>{{ rows|length }} transaction{{ 's' if rows|length != 1 else '' }}</span>
+    <span>Filtered total: <strong class="{{ 'amount-positive' if filtered_total >= 0 else 'amount-negative' }}">{{ fmt_num(filtered_total) }}</strong></span>
+    <span>Selected total: <strong data-selected-total class="amount-positive">0.00</strong> <span class="caption" data-selected-count>(0 selected)</span></span>
+  </div>
+</div>
+
+<template id="new-row-template">
+  <tr class="new-row">
+    <td><button type="button" class="btn-remove-new" data-remove-new title="Remove this row">×</button></td>
+    <td><input type="text" data-new-field="date"></td>
+    <td><textarea rows="1" data-new-field="account_name">{{ default_account }}</textarea></td>
+    <td><input type="text" data-new-field="method" list="method-options" placeholder="—"></td>
+    <td><textarea rows="1" data-new-field="description"></textarea></td>
+    <td><input type="text" data-new-field="category" autocomplete="off" placeholder="Uncategorized"></td>
+    <td>
+      <select data-new-field="transaction_type">
+        {% for tt in transaction_types %}
+        <option value="{{ tt }}" title="{{ type_hints[tt] }}" {{ 'selected' if tt == 'expense' }}>{{ tt }}</option>
+        {% endfor %}
+      </select>
+    </td>
+    <td><input type="text" data-new-field="amount" value="0"></td>
+    <td class="caption">—</td>
+    <td></td>
+    <td><textarea rows="1" data-new-field="note"></textarea></td>
+  </tr>
+</template>
+{% endblock %}
