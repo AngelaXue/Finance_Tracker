@@ -37,13 +37,14 @@ Ask (or infer from what they've told you), then act:
 | Question | What to do |
 |---|---|
 | Which banks/cards? | They add each as an account (Net Worth → Add Account, or `python -m src.maintenance create-account`). BofA and Chase CSVs are read by dedicated parsers; most others by auto-detection. If they paste a CSV **header row** (column names only — never data rows) for a bank that fails, write an entry for `config/csv_formats.json` (§6.10). Only write a new parser class for something truly unusual. |
-| Which currency do they think in? Any foreign accounts? | Set `BASE_CURRENCY` and `RATES` in `src/fx.py` (§6.11). Add missing currencies + symbols. Remind them the shipped non-base rates are placeholders. |
+| Which currency do they think in? Any foreign accounts? | Set `BASE_CURRENCY` and `RATES` in `src/fx.py` (§6.11). Add missing currencies + symbols. Remind them the shipped non-base rates are placeholders. The multi-currency UI turns itself on when an account in a second currency exists — nothing to toggle. |
 | Does anyone else pay one of their accounts, or do they share costs with people? | Owner *Someone else pays it* (`owner='other'`, `iou_person`) for such accounts; explain the IOU menu (§6.8). |
 | Investment accounts? | `brokerage`/`retirement` accounts with distinctive first words in their names, so a note like `roth` matches (§6.7). |
 | Older history in a spreadsheet? | Help them reshape it to the templates in `static/examples/` (§6.10). They run the import; you don't open the file. |
 | Recurring descriptions that are always one category/type? | Add `CATEGORY_RULES` entries in `src/categorize.py` (specific patterns above general ones). |
 | Their bank's category names? | Extend `BANK_CATEGORY_MAP` in `src/parsers/base.py`. |
-| A feature request | Check §9 (open ideas) and the reasoning in §6 first — several "obvious" features were tried and removed for good reasons (e.g. net-worth adjustments for pass-through money, FIFO repayment matching). |
+| A work card / expense reimbursements? | Build it from the recipe `docs/recipes/work-expenses.md` (a full design, deliberately not built in). Until then, the pass-through rule (§6.6) covers the money in their own accounts. |
+| A feature request | Check `docs/recipes/` (designs for optional features), §9 (open ideas) and the reasoning in §6 first — several "obvious" features were tried and removed for good reasons (e.g. net-worth adjustments for pass-through money, FIFO repayment matching). |
 
 ---
 
@@ -97,6 +98,7 @@ templates/                 base.html (sidebar, demo banner, MONEY_DIGITS, MONEY_
                            help.html
 static/                    app.js, style.css, examples/ (history templates, csv_formats.example.json)
 tests/                     pytest; every test uses temp DBs/folders
+docs/recipes/              Optional features written as designs, not code (work-expenses.md)
 .claude/settings.json      Deny rules keeping Claude Code out of the user's data
 ```
 
@@ -140,6 +142,10 @@ the base currency. Transaction-derived IOUs are computed live, never copied here
 (`CD | Treasury | Corporate bond | Municipal bond | Other` = `app.FIXED_INCOME_KINDS`). Never summed into net worth —
 the money is already inside `account_id`'s balance.
 
+**cd_interest** — interest logged by hand per CD/bond: `cd_id (ON DELETE CASCADE), date, amount (negative = a
+correction), note`. A CD's **Current Balance** = principal + its interest (`aggregates.list_cds`). Deliberately *not*
+the linked account's balance: for a CD inside a brokerage/retirement account that showed the whole account. Memo only.
+
 **investment_deposits** — "Principal added" typed on Investments: new money into a brokerage/retirement account that
 didn't come through a logged transaction. Counted exactly like a matched contribution.
 
@@ -153,18 +159,18 @@ upgrade databases from the original single-user version: `parent_ledger` → `io
 
 | Route | Purpose |
 |---|---|
-| `/` Overview | Net worth **excluding brokerage/retirement** (stable between manual updates) + trend (own period param prefix `nw_`, default All); balances by currency; debts, loans & IOU balances; allocation + spending donuts; small Sankey; *Getting started* checklist until there are accounts and transactions. |
-| `/net-worth` | One table per currency (base currency first, always shown; others when used), grouped Cash/Investments/Credit/Loans, 30-day change, liabilities shown negative; converted total + the rates used; "Paid by someone else" list; Set Balance; CDs & Bonds; Investments summary; Add Account (`#add-account`). No charts. |
+| `/` Overview | Net worth **excluding brokerage/retirement** (stable between manual updates) + trend (own period param prefix `nw_`, default All); Balances (per account; per currency + combined when `MULTI_CURRENCY`, §6.11); debts, loans & IOU balances; allocation + spending donuts; small Sankey; *Getting started* checklist until there are accounts and transactions. |
+| `/net-worth` | One table per currency (base currency first, always shown; others when used; titled just "Accounts" without currency labels while single-currency), grouped Cash/Investments/Credit/Loans, 30-day change, liabilities shown negative; converted total + the rates used; "Paid by someone else" list; Set Balance; CDs & Bonds; Investments summary; Add Account (`#add-account`). No charts. |
 | `/cash-flow` | 4 cards (Inflow, Living Expenses, Saved + Invested, Savings Rate) + Sankey. |
 | `/spending` | Category bars (share, change vs. prior equal-length period), donut, sparklines; `?pass_through=include`. Click-through to Transactions with `period=custom&start&end&category`. No currency split (by design). |
 | `/transactions` | Filter (period: This Month default / All / custom; year, month, account, category incl. Uncategorized, needs review, Mine/Not Mine, `iou=any|they_paid|i_paid`, search); inline staged edits + Save/Discard; + Add row; Delete selected; Mark Not Mine/Mine; IOU… menu + Person box; filtered + selected totals; Suggest categories. |
 | `/import` | Upload statements to an account folder; pending files with per-file sign choice; Preview; Import; Remove; optional history section. |
 | `/investments` | Overview panel + one collapsible panel per investment account (own period params `a<id>_period`…), charts on a linear time axis, CDs & bonds band; "need a look" list with staged account choices; Add a Snapshot; All entries (editable). |
 | `/ious` | Person cards; selected person's They paid / I paid panels with Settled/Pending marks; Add an entry (incl. starting balance). `?person=`. |
-| `/help` | FAQ-style reference. |
+| `/help` | FAQ-style reference with a browser-only search box (`initHelpSearch`: word stems, related words from `HELP_RELATED` — extend it when a concept gets new vocabulary — typo tolerance, rarer words weigh more; `/` focuses it; `?q=` pre-fills it). |
 
 JSON endpoints (all POST unless noted): `/api/transactions/{save,delete,set-attributable,set-iou,suggest-categories}`,
-`/api/accounts/{add,set-balance}`, `/api/cds/{add,update,delete}`, `/api/investments/{entry,assign}`,
+`/api/accounts/{add,set-balance}`, `/api/cds/{add,update,delete}`, `/api/cds/interest/{add,delete}`, `/api/investments/{entry,assign}`,
 GET `/api/investments/guesses`, `/api/investments/deposits/{update,delete}`, `/api/balances/{update,delete}`,
 `/api/ious/{add,set-settlement,delete}`, `/api/import/{upload,preview,run,discard}`,
 `/api/import/history/{upload,preview,run}`.
@@ -234,8 +240,13 @@ Savings rate = (Investing + Cash Savings) / income.
 `expense` rows only, grouped by category ("Uncategorized" if NULL), Not Mine included. Rows whose category normalizes
 to "passthrough" (case, spaces, hyphens ignored — `_PASS_THROUGH_SQL`) are excluded unless `pass_through=include`;
 Overview's donut uses the same default. This is the **one place a category changes the math** — deliberate, because
-work reimbursements often arrive typed `expense`/`income`. Cash Flow still counts them (usually a wash). Possible
-future: a dedicated type/flag so the two agree without reading a label.
+work reimbursements often arrive typed `expense`/`income`. Cash Flow doesn't read the category, so it still counts
+them unless they're marked Not Mine — counted, they inflate income and lower the savings rate. So a pass-through row
+is "finished" only with both: Category Pass-Through **and** Not Mine. `aggregates.PASS_THROUGH_TODO_SQL` finds the
+half-finished ones (income/expense, Pass-Through, still Mine): a yellow banner on Transactions plus the
+`review=pass_through` filter ("Pass-through to finish"). It never guesses from descriptions — the original version
+also matched "amex"/"reimb" for one user's corporate card; that's user-specific. Possible future: a dedicated
+type/flag so Spending and Cash Flow agree without reading a label.
 
 ### 6.7 Investments
 
@@ -325,6 +336,14 @@ before importing; they become training data). Web import deletes the files only 
 
 ### 6.11 Currencies (`src/fx.py`)
 
+**Single-currency by default, multi-currency automatically.** `aggregates.currencies_in_use` (active accounts' currencies
++ base) → the `MULTI_CURRENCY` template flag (`app._multi_currency`, injected on every page). While it's false (most
+users), templates hide everything currency-specific: per-currency table titles and "(USD)" suffixes, Overview shows
+**Balances** (per account) instead of **Balances by Currency**, no currency code after Transactions amounts, no
+"converted to …" notes, and Add Account's currency picker sits behind an "Other currency?" link. Once any active
+account uses another currency, all of it appears with no setting. New currency-specific UI must be wrapped in
+`{% if MULTI_CURRENCY %}` the same way.
+
 Show every account in its own currency; never blend within a table. Convert only to combine (Net Worth total, Cash
 Flow, Spending, IOUs, balances-by-currency's combined line) via `to_base(amount, currency)` with
 `RATES[c]` = value of 1 unit in `BASE_CURRENCY`. Rates are manual (not a live API — this is a personal tool).
@@ -383,6 +402,9 @@ ever writes the demo DB.
   confirm if edits are pending.
 - `x.toLocaleString(undefined, MONEY_DIGITS)` for money; `MONEY_SYMBOL` for the base symbol; `localISODate()` for
   today (never `toISOString()` — UTC shifts the date in the evening).
+- (i) tooltips: `<span class="info-tip" tabindex="0" data-tip="...">i</span>` (`info-tip-wide` for long text;
+  `&#10;` = line break). `initInfoTips` shows them as one floating box on `<body>`, clamped inside the window, so
+  they're never under the sidebar or clipped by a scroll box; the CSS `::after` version is only the no-JS fallback.
 - localStorage only for per-browser conveniences (folded panels), wrapped in try/catch; pages work without it.
 - One `init…()` per page feature, called from the `DOMContentLoaded` handler at the bottom.
 
@@ -406,7 +428,9 @@ time so monkeypatching works; keep it that way.
 - Transactions: Method using the custom suggestion dropdown (so Tab works like Account/Category).
 - Net Worth: rename/deactivate an account from the UI (today: `UPDATE accounts SET name = …` is safe — everything
   references `account_id` — but the account's statements folder keeps the old name until renamed too).
-- CDs & bonds: an estimated current value from the rate (display-only today).
+- CDs & bonds: an estimated current value from the rate (display-only today; Current Balance is principal + interest
+  logged by hand).
+- Work card / reimbursements: fully designed in `docs/recipes/work-expenses.md`, not built.
 - Investments: currency conversion for a non-base-currency investment account.
 - Import: OFX/QFX files (many banks offer them alongside CSV); remembering a per-account sign choice.
 - Categories: an in-app editor for `CATEGORY_RULES`.

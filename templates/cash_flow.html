@@ -33,7 +33,7 @@
   <p class="caption">Transfers between your own accounts (checking → savings, credit card payoffs) and personal transfers are excluded from this diagram.</p>
   <div class="caption cash-flow-notes">
     <p><strong>Living Expenses</strong> is everything with Type <span class="field-code">expense</span> in this
-      period, converted to {{ BASE_CURRENCY }}. Only Type matters, not Category.</p>
+      period{% if MULTI_CURRENCY %}, converted to {{ BASE_CURRENCY }}{% endif %}. Only Type matters, not Category.</p>
     <ul class="ledger-tips">
       <li>Includes every account — accounts someone else pays for too.</li>
       <li>Leaves out rows marked Not Mine, transfers between your own accounts, and personal transfers.</li>

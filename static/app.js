@@ -1016,6 +1016,46 @@ function initCdTable(section) {
 
   if (discardBtn) discardBtn.addEventListener("click", () => window.location.reload());
 
+  const unsavedOk = () => Object.keys(pendingEdits).length === 0
+    || confirm("You have unsaved edits in this table — they'll be discarded. Continue?");
+
+  // Add interest: one entry for one CD/bond; its Current Balance becomes
+  // principal + all its interest
+  const interestForm = section.querySelector("[data-cd-interest-form]");
+  if (interestForm) {
+    interestForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!unsavedOk()) return;
+      const data = new FormData(interestForm);
+      const res = await postJSON("/api/cds/interest/add", {
+        cd_id: Number(data.get("cd_id")), date: data.get("date"),
+        amount: data.get("amount"), note: data.get("note"),
+      });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || "Couldn't add it — please check the fields and try again.");
+      }
+    });
+  }
+
+  const interestBoxes = [...section.querySelectorAll("[data-cd-interest-id]")];
+  const interestDelete = section.querySelector("[data-cd-interest-delete]");
+  interestBoxes.forEach((cb) => cb.addEventListener("change", () => {
+    if (interestDelete) interestDelete.disabled = !interestBoxes.some((b) => b.checked);
+  }));
+  if (interestDelete) {
+    interestDelete.addEventListener("click", async () => {
+      const ids = interestBoxes.filter((b) => b.checked).map((b) => Number(b.dataset.cdInterestId));
+      if (ids.length === 0 || !unsavedOk()) return;
+      if (!confirm(`Delete ${ids.length} interest entr${ids.length === 1 ? "y" : "ies"}?`)) return;
+      const res = await postJSON("/api/cds/interest/delete", { ids });
+      if (res.ok) window.location.reload();
+      else alert("Couldn't delete — please try again.");
+    });
+  }
+
   if (saveBtn) {
     saveBtn.addEventListener("click", async () => {
       const edits = Object.entries(pendingEdits).map(([id, fields]) => ({ id: Number(id), ...fields }));
@@ -1257,6 +1297,325 @@ function initHelpPage() {
 
   if (location.hash) openSection(decodeURIComponent(location.hash.slice(1)), true);
   window.addEventListener("hashchange", () => openSection(decodeURIComponent(location.hash.slice(1)), true));
+
+  initHelpSearch(sections, openSection);
+}
+
+// Help search — runs entirely in the browser over the page's own text (no
+// server, nothing sent anywhere). "Smarter" than a plain word match, but
+// not AI: each topic (an h3 and what follows it, or a section's intro) is
+// scored on
+//   - word stems: "reimbursed" / "reimbursement" / "reimburse" all match
+//   - related words (HELP_RELATED): "owe" also finds IOU/debt/loan
+//   - typos and half-typed words: "duplciate", "reimb"
+//   - where it hit: topic title > section title > body text
+//   - rarer words count for more
+// and a topic matching every query word beats one matching only some.
+// Stopwords drop out, so a question ("how do I fix a wrong category")
+// works too. "/" focuses the box; arrows + Enter pick; Esc clears;
+// /help?q=... opens with a search filled in.
+const HELP_STOPWORDS = new Set((
+  "a an and are as at be by can could do does did for from get got has have how i if in into is it its " +
+  "me my of on or should so that the their them then there these they this to was what when where which " +
+  "who why will with would you your not no about up out just also any all go goes going happen happens"
+).split(" "));
+
+// Groups of words that mean roughly the same thing here. Extend when a new
+// concept gets its own vocabulary (e.g. a feature you add for your user).
+const HELP_RELATED = [
+  "work employer company business job",
+  "reimburse reimbursement payback repay claim",
+  "passthrough forward pass",
+  "duplicate dupe double twice repeat copy pink",
+  "iou owe owed debt lend loan borrow friend family person someone",
+  "notmine attributable gift",
+  "delete remove erase",
+  "import csv upload download statement file parse format",
+  "networth balance asset liability",
+  "invest investment brokerage ira retirement stock snapshot principal",
+  "cd bond treasury certificate interest",
+  "category label classify categorize classifier",
+  "type kind",
+  "transfer move payoff",
+  "venmo paypal wallet cash zelle",
+  "refund credit return",
+  "date period range month year",
+  "spending spend expense purchase",
+  "income salary paycheck deposit inflow earn",
+  "savings save residual",
+  "fix wrong mistake error undo correct edit change",
+  "paid pay payment settle settled",
+  "review check yellow predict guess suggest",
+  "chart graph trend diagram sankey",
+  "cashflow sankey inflow outflow",
+  "currency exchange rate fx convert",
+  "demo sample fake",
+  "account bank checking",
+];
+
+function helpNormalize(text) {
+  return text.toLowerCase()
+    .replace(/pass[\s-]?through/g, "passthrough")
+    .replace(/not mine/g, "notmine")
+    .replace(/net worth/g, "networth")
+    .replace(/cash flow/g, "cashflow");
+}
+
+function helpStem(word) {
+  let w = word;
+  if (w.length <= 3) return w;
+  w = w.replace(/ies$/, "y");
+  const strip = (re) => {
+    const m = w.match(re);
+    if (!m || w.length - m[0].length < 3) return false;
+    w = w.slice(0, -m[0].length);
+    return true;
+  };
+  // One ending only — "reimbursed" → "reimburs", not on to "reimbur"
+  if (!strip(/(ments?|ings?|ed)$/) && !w.endsWith("ss")) strip(/s$/);
+  strip(/e$/);
+  return w;
+}
+
+function helpTokens(text) {
+  return helpNormalize(text).split(/[^a-z0-9]+/)
+    .filter((w) => w && !HELP_STOPWORDS.has(w))
+    .map(helpStem);
+}
+
+// Edit distance, giving up (returns max + 1) once it can't be <= max
+function helpEditDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prevPrev = null;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      // a swapped pair of letters counts as one typo
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prevPrev[j - 2] + 1);
+      cur.push(v);
+      rowMin = Math.min(rowMin, v);
+    }
+    if (rowMin > max) return max + 1;
+    prevPrev = prev;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function initHelpSearch(sections, openSection) {
+  const input = document.querySelector("[data-help-search]");
+  const list = document.querySelector("[data-help-results]");
+  if (!input || !list) return;
+
+  // related[stem] → stems in the same group(s)
+  const related = new Map();
+  HELP_RELATED.forEach((group) => {
+    const stems = group.split(" ").map(helpStem);
+    stems.forEach((s) => {
+      if (!related.has(s)) related.set(s, new Set());
+      stems.forEach((o) => { if (o !== s) related.get(s).add(o); });
+    });
+  });
+
+  // One topic per h3 (plus each section's intro), with its stems by field
+  const topics = [];
+  let autoId = 0;
+  sections.forEach((section) => {
+    const sectionTitle = section.querySelector(".help-summary h2").textContent.trim();
+    const caption = (section.querySelector(".help-summary .caption") || {}).textContent || "";
+    let current = { section, sectionTitle, title: sectionTitle, anchorId: section.id, intro: true, parts: [caption] };
+    topics.push(current);
+    const body = section.querySelector(".help-body");
+    [...(body ? body.children : [])].forEach((el) => {
+      if (el.tagName === "H3") {
+        if (!el.id) el.id = `help-topic-${++autoId}`;
+        current = { section, sectionTitle, title: el.textContent.trim(), anchorId: el.id, intro: false, parts: [] };
+        topics.push(current);
+      } else {
+        current.parts.push(el.textContent);
+      }
+    });
+  });
+  const vocab = new Set();
+  topics.forEach((t) => {
+    t.text = t.parts.join(" ").replace(/\s+/g, " ").trim();
+    t.norm = helpNormalize(`${t.title} ${t.text}`);
+    t.titleStems = new Set(helpTokens(t.title));
+    t.sectionStems = new Set(helpTokens(t.sectionTitle));
+    t.bodyStems = new Map();
+    helpTokens(t.text).forEach((s) => t.bodyStems.set(s, (t.bodyStems.get(s) || 0) + 1));
+    [...t.titleStems, ...t.sectionStems, ...t.bodyStems.keys()].forEach((s) => vocab.add(s));
+  });
+  // Rarer words count for more: "passthrough" says more than "mark"
+  const docFreq = new Map();
+  topics.forEach((t) => {
+    new Set([...t.titleStems, ...t.sectionStems, ...t.bodyStems.keys()])
+      .forEach((s) => docFreq.set(s, (docFreq.get(s) || 0) + 1));
+  });
+  const rarity = (s) => Math.log(1 + topics.length / (docFreq.get(s) || 1));
+
+  // A query word → every stem it should match, with a weight (1 = exact)
+  function expand(q, isLast) {
+    const m = new Map();
+    const add = (s, w) => { if ((m.get(s) || 0) < w) m.set(s, w); };
+    add(q, 1);
+    (related.get(q) || []).forEach((s) => add(s, 0.55));
+    vocab.forEach((s) => {
+      if (s === q) return;
+      if (s.startsWith(q) && (q.length >= 4 || (isLast && q.length >= 3))) add(s, 0.75);
+      else if (q.length >= 5) {
+        const d = helpEditDistance(q, s, 2);
+        if (d === 1) add(s, 0.6);
+        else if (d === 2 && q.length >= 8) add(s, 0.45);
+      }
+    });
+    // A typo'd or half-typed word still brings its related words along
+    [...m].forEach(([s, w]) => {
+      if (s !== q && w >= 0.6) (related.get(s) || []).forEach((r) => add(r, 0.4));
+    });
+    return m;
+  }
+
+  function search(query) {
+    const raw = helpNormalize(query).split(/[^a-z0-9]+/).filter((w) => w && !HELP_STOPWORDS.has(w));
+    if (!raw.length) return { results: [], terms: [] };
+    const endsMidWord = /[a-z0-9]$/i.test(query);
+    const terms = raw.map((w, i) => expand(helpStem(w), endsMidWord && i === raw.length - 1));
+    const phrase = raw.length > 1 ? raw.join(" ") : null;
+    const results = [];
+    topics.forEach((t) => {
+      let score = 0;
+      let matched = 0;
+      let exact = 0;
+      terms.forEach((exp) => {
+        let best = 0;
+        let bestWeight = 0;
+        exp.forEach((w, s) => {
+          let v = 0;
+          if (t.titleStems.has(s)) v = Math.max(v, 3 * w);
+          if (t.sectionStems.has(s)) v = Math.max(v, 2 * w);
+          const c = t.bodyStems.get(s);
+          if (c) v = Math.max(v, w * (1 + 0.5 * Math.min(Math.log2(c), 2)));
+          v *= rarity(s);
+          if (v > best) { best = v; bestWeight = w; }
+        });
+        if (best > 0) { matched++; score += best; if (bestWeight === 1) exact++; }
+      });
+      if (!matched) return;
+      score *= (matched / terms.length) ** 2;
+      if (phrase && t.norm.includes(phrase)) score += 3;
+      results.push({ topic: t, score, exact });
+    });
+    results.sort((a, b) => b.score - a.score);
+    return { results: results.slice(0, 8), terms };
+  }
+
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // The sentence with the most hits, trimmed around the first one, with
+  // every matching word highlighted
+  function snippet(topic, terms) {
+    const hit = (word) => {
+      const s = helpStem(helpNormalize(word));
+      return terms.some((exp) => exp.has(s));
+    };
+    const sentences = (topic.text || "").split(/(?<=[.!?:])\s+/).filter(Boolean);
+    let best = sentences[0] || "";
+    let bestHits = -1;
+    sentences.forEach((sentence) => {
+      const n = (sentence.match(/[A-Za-z0-9][A-Za-z0-9']*/g) || []).filter(hit).length;
+      if (n > bestHits) { best = sentence; bestHits = n; }
+    });
+    let text = best;
+    if (text.length > 200) {
+      const words = [...text.matchAll(/[A-Za-z0-9][A-Za-z0-9']*/g)];
+      const first = words.find((m) => hit(m[0]));
+      const start = Math.max(0, (first ? first.index : 0) - 60);
+      text = (start > 0 ? "…" : "") + text.slice(start, start + 200).trim() + "…";
+    }
+    let out = "";
+    let last = 0;
+    text.replace(/[A-Za-z0-9][A-Za-z0-9']*/g, (word, idx) => {
+      out += esc(text.slice(last, idx)) + (hit(word) ? `<mark>${esc(word)}</mark>` : esc(word));
+      last = idx + word.length;
+      return word;
+    });
+    return out + esc(text.slice(last));
+  }
+
+  let current = [];
+  let active = 0;
+
+  function go(topic) {
+    history.replaceState(null, "", `#${topic.anchorId}`);
+    openSection(topic.anchorId, true);
+    if (!topic.intro) {
+      const h3 = document.getElementById(topic.anchorId);
+      h3.classList.add("help-flash-topic");
+      setTimeout(() => h3.classList.remove("help-flash-topic"), 1500);
+    }
+    list.hidden = true;
+  }
+
+  function render() {
+    const query = input.value.trim();
+    if (!query) { list.hidden = true; current = []; return; }
+    const { results, terms } = search(query);
+    current = results;
+    active = 0;
+    if (!results.length) {
+      list.innerHTML = '<li class="help-search-note">No matches. Try other words, or Expand all and use the browser\'s Find (⌘F / Ctrl+F).</li>';
+      list.hidden = false;
+      return;
+    }
+    const onlyRelated = results.every((r) => r.exact === 0);
+    list.innerHTML = (onlyRelated ? '<li class="help-search-note">No exact match — showing close and related topics.</li>' : "") +
+      results.map((r, i) => {
+        const t = r.topic;
+        const where = t.intro ? " — overview" : ` — ${esc(t.sectionTitle)}`;
+        return `<li data-i="${i}" class="${i === 0 ? "active" : ""}">` +
+          `<div class="help-result-title">${esc(t.title)}<span class="help-result-where">${where}</span></div>` +
+          `<div class="help-result-snippet">${snippet(t, terms)}</div></li>`;
+      }).join("");
+    list.hidden = false;
+  }
+
+  function setActive(i) {
+    if (!current.length) return;
+    active = (i + current.length) % current.length;
+    list.querySelectorAll("li[data-i]").forEach((li) => li.classList.toggle("active", Number(li.dataset.i) === active));
+    const li = list.querySelector(`li[data-i="${active}"]`);
+    if (li) li.scrollIntoView({ block: "nearest" });
+  }
+
+  input.addEventListener("input", render);
+  input.addEventListener("focus", () => { if (input.value.trim()) render(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive(active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(active - 1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (current[active]) go(current[active].topic); }
+    else if (e.key === "Escape") { input.value = ""; list.hidden = true; }
+  });
+  list.addEventListener("mousedown", (e) => {
+    const li = e.target.closest("li[data-i]");
+    if (!li) return;
+    e.preventDefault();  // keep focus so the list doesn't vanish before the click lands
+    go(current[Number(li.dataset.i)].topic);
+  });
+  input.addEventListener("blur", () => { list.hidden = true; });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.metaKey || e.ctrlKey) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+    e.preventDefault();
+    input.focus();
+  });
+
+  const preset = new URLSearchParams(location.search).get("q");
+  if (preset) { input.value = preset; input.focus(); render(); }
 }
 
 // Collapsible panels (<details data-collapse-key>): remember which ones
@@ -1330,6 +1689,17 @@ function initAccountAddForm() {
   const dateInput = form.querySelector("[name='balance_date']");
   if (dateInput && !dateInput.value) dateInput.value = localISODate();
 
+  // One currency in use: the currency picker waits behind "Other currency?"
+  const currencySelect = form.querySelector("[data-currency-select]");
+  const currencyReveal = form.querySelector("[data-currency-reveal]");
+  if (currencySelect && currencyReveal) {
+    currencyReveal.addEventListener("click", () => {
+      currencySelect.hidden = false;
+      currencyReveal.hidden = true;
+      currencySelect.focus();
+    });
+  }
+
   // "Someone else pays it" asks who
   const ownerSelect = form.querySelector("[data-owner-select]");
   const personInput = form.querySelector("[data-owner-person]");
@@ -1382,6 +1752,46 @@ function initSetBalanceForm() {
   });
 }
 
+// (i) tooltips (<span class="info-tip" data-tip="...">): shown as one
+// floating box on <body>, positioned next to the icon and kept inside
+// the window — so it's never hidden under the sidebar or clipped by a
+// scrolling table. Without JS the CSS ::after version still works.
+function initInfoTips() {
+  const tips = document.querySelectorAll(".info-tip[data-tip]");
+  if (!tips.length) return;
+  document.documentElement.classList.add("js-info-tips");
+  const box = document.createElement("div");
+  box.className = "info-tip-float";
+  box.hidden = true;
+  box.setAttribute("role", "tooltip");
+  document.body.appendChild(box);
+  const GAP = 8;
+
+  function show(el) {
+    box.textContent = el.dataset.tip;
+    box.classList.toggle("info-tip-float-wide", el.classList.contains("info-tip-wide"));
+    box.hidden = false;
+    const icon = el.getBoundingClientRect();
+    const tip = box.getBoundingClientRect();
+    const maxLeft = window.innerWidth - tip.width - GAP;
+    const left = Math.max(GAP, Math.min(icon.left + icon.width / 2 - tip.width / 2, maxLeft));
+    let top = icon.bottom + GAP;
+    if (top + tip.height > window.innerHeight - GAP) top = Math.max(GAP, icon.top - GAP - tip.height);
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+  }
+  const hide = () => { box.hidden = true; };
+
+  tips.forEach((el) => {
+    el.addEventListener("mouseenter", () => show(el));
+    el.addEventListener("focus", () => show(el));
+    el.addEventListener("mouseleave", hide);
+    el.addEventListener("blur", hide);
+  });
+  // The icon moves when anything scrolls; just hide rather than chase it
+  document.addEventListener("scroll", hide, true);
+}
+
 function initScrollPreservation() {
   document.querySelectorAll(".period-selector a.period-btn").forEach((a) => {
     a.addEventListener("click", saveScrollPosition);
@@ -1393,6 +1803,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTransactionsPage();
   initIousPage();
   initImportPage();
+  initInfoTips();
   initCdsSection();
   initInvestmentSnapshotForm();
   initInvestmentAssign();

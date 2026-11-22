@@ -141,6 +141,17 @@ CREATE TABLE IF NOT EXISTS cds (
     kind TEXT NOT NULL DEFAULT 'CD'     -- app.FIXED_INCOME_KINDS
 );
 
+-- Interest earned on one CD/bond, logged by hand. Its current balance =
+-- principal + the sum of these. Memo only, like cds itself: the money is
+-- already in the holding account's balance.
+CREATE TABLE IF NOT EXISTS cd_interest (
+    id INTEGER PRIMARY KEY,
+    cd_id INTEGER NOT NULL REFERENCES cds(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    amount REAL NOT NULL,               -- usually positive; negative = a correction
+    note TEXT
+);
+
 -- "Principal added" typed on the Investments page: new money into a
 -- brokerage/retirement account that didn't come through a logged
 -- transaction. Counted exactly like a matched investment_contribution.

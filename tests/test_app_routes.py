@@ -1161,3 +1161,116 @@ def test_every_page_renders_with_the_demo_data(client):
     conn.close()
     assert ledgers["Mom"] > 0  # Mom's card spending outweighs the repayments
     assert ledgers["Alex"] == -125.0  # this month's internet half + the concert tickets
+
+
+def test_cd_interest_add_shows_in_current_balance_and_deletes(client):
+    _seed_investment_accounts()
+    client.post("/api/cds/add", json={"account_name": "Roth IRA", "institution": "Marcus", "principal": "5,000"})
+    conn = db.get_connection()
+    cd_id = conn.execute("SELECT id FROM cds").fetchone()["id"]
+    conn.close()
+    # No interest yet → current balance is just the principal (not the account's balance)
+    html = client.get("/net-worth").get_data(as_text=True)
+    assert "5,000.00" in html and "Add interest" in html and "Interest entries" not in html
+
+    resp = client.post("/api/cds/interest/add", json={"cd_id": cd_id, "date": "2026-03-01", "amount": "125.50", "note": "Q1"})
+    assert resp.status_code == 200
+    for page in ("/net-worth", "/investments"):
+        html = client.get(page).get_data(as_text=True)
+        assert "5,125.50" in html and "125.50 interest" in html and "Interest entries (1)" in html
+
+    conn = db.get_connection()
+    entry_id = conn.execute("SELECT id FROM cd_interest").fetchone()["id"]
+    conn.close()
+    assert client.post("/api/cds/interest/delete", json={"ids": [entry_id]}).get_json()["deleted"] == 1
+    assert "125.50 interest" not in client.get("/net-worth").get_data(as_text=True)
+
+    # Deleting the CD takes its interest with it
+    client.post("/api/cds/interest/add", json={"cd_id": cd_id, "date": "2026-04-01", "amount": "10"})
+    client.post("/api/cds/delete", json={"ids": [cd_id]})
+    conn = db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM cd_interest").fetchone()[0] == 0
+    conn.close()
+
+
+@pytest.mark.parametrize("body", [
+    {"cd_id": 999, "date": "2026-03-01", "amount": "10"},     # no such CD
+    {"date": "2026-03-01", "amount": "10"},                   # none picked
+    {"cd_id": 1, "date": "March", "amount": "10"},
+    {"cd_id": 1, "date": "2026-03-01", "amount": "abc"},
+    {"cd_id": 1, "date": "2026-03-01", "amount": "0"},
+])
+def test_cd_interest_add_rejects_bad_input(client, body):
+    _seed_investment_accounts()
+    client.post("/api/cds/add", json={"account_name": "Roth IRA", "institution": "Marcus", "principal": "5000"})
+    assert client.post("/api/cds/interest/add", json=body).status_code == 400
+    conn = db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM cd_interest").fetchone()[0] == 0
+    conn.close()
+    assert client.post("/api/cds/interest/delete", json={"ids": []}).status_code == 400
+
+
+def test_transactions_pass_through_reminder_and_filter(client):
+    conn = db.get_connection()
+    conn.execute("INSERT INTO accounts (name, institution, account_type, currency, owner) "
+                 "VALUES ('Checking', 'Bank', 'checking', 'USD', 'self')")
+    acct = conn.execute("SELECT id FROM accounts").fetchone()["id"]
+    rows = [(-7.0, "Pass Through", 1), (120.0, "Pass-Through", 1), (-12.0, "Pass-Through", 0), (-16.0, "Groceries", 1)]
+    for i, (amount, cat, mine) in enumerate(rows):
+        conn.execute(
+            "INSERT INTO transactions (account_id, date, amount, currency, category, transaction_type, description, "
+            "source, dedup_hash, attributable_to_user) VALUES (?, ?, ?, 'USD', ?, ?, 'row', 'manual', ?, ?)",
+            (acct, f"2026-01-0{i + 1}", amount, cat, "income" if amount > 0 else "expense",
+             compute_dedup_hash(acct, f"2026-01-0{i + 1}", amount, "row"), mine),
+        )
+    conn.commit()
+    conn.close()
+
+    html = client.get("/transactions").get_data(as_text=True)
+    assert "data-pass-through-reminder" in html and "2 Pass-Through transactions are still" in html
+    assert "Pass-through to finish (2)" in html
+
+    html = client.get("/transactions?review=pass_through&period=all").get_data(as_text=True)
+    for shown in ("-7.00", "120.00"):
+        assert shown in html
+    for hidden in ("-12.00", "-16.00"):
+        assert hidden not in html
+
+
+def test_transactions_no_pass_through_reminder_when_nothing_to_do(client):
+    html = client.get("/transactions").get_data(as_text=True)
+    assert "data-pass-through-reminder" not in html
+
+
+def test_help_page_has_search_box(client):
+    html = client.get("/help").get_data(as_text=True)
+    assert "data-help-search" in html and "data-help-results" in html
+
+
+def test_currency_ui_stays_hidden_until_a_second_currency_is_used(client):
+    def add(name, currency):
+        assert client.post("/api/accounts/add", json={"name": name, "institution": "B", "account_type": "checking",
+                                                      "currency": currency}).status_code == 200
+
+    add("Checking", "USD")
+    overview = client.get("/").get_data(as_text=True)
+    net_worth = client.get("/net-worth").get_data(as_text=True)
+    assert "<h2>Balances</h2>" in overview and "Balances by Currency" not in overview
+    assert "(in USD)" not in net_worth and "Total (USD)" not in net_worth
+    assert "data-currency-reveal" in net_worth  # the picker waits behind "Other currency?"
+
+    add("Euro Savings", "EUR")
+    overview = client.get("/").get_data(as_text=True)
+    net_worth = client.get("/net-worth").get_data(as_text=True)
+    assert "Balances by Currency" in overview
+    assert "(in USD)" in net_worth and "(in EUR)" in net_worth and "1 EUR =" in net_worth
+    assert "data-currency-reveal" not in net_worth
+
+
+def test_page_intro_caption_follows_the_title(client):
+    # The spacing rule is `h1 + .caption` in style.css — it needs the caption
+    # to be the title's very next element
+    for page in ("/import", "/ious", "/help"):
+        html = client.get(page).get_data(as_text=True)
+        title_end = html.index("</h1>")
+        assert html[title_end + 5:].lstrip().startswith('<p class="caption')

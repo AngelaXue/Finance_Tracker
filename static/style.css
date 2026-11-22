@@ -449,6 +449,46 @@ select.inv-assign {
   visibility: visible;
 }
 
+/* A longer tooltip that keeps its line breaks (&#10; in data-tip) */
+.info-tip-wide::after {
+  width: 320px;
+  white-space: pre-line;
+  text-align: left;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* With JS (initInfoTips), the tip is one floating box on <body> instead,
+   placed to stay fully inside the window — never under the sidebar or
+   cut off by a scrolling table. The ::after above is the no-JS fallback. */
+.js-info-tips .info-tip::after {
+  display: none;
+}
+
+.info-tip-float {
+  position: fixed;
+  z-index: 1000;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #2c2c2e;
+  color: #fff;
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: pre-line;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.info-tip-float.info-tip-float-wide {
+  width: 320px;
+}
+
+.info-tip-float[hidden] {
+  display: none;
+}
+
 .period-selector {
   display: flex;
   align-items: center;
@@ -996,6 +1036,25 @@ table textarea {
   color: #1c1c1e;
 }
 
+/* A quiet text-style button ("Other currency?") */
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 13px;
+  color: #3676ad;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.btn-link[hidden] {
+  display: none;
+}
+
 .btn-danger {
   background: var(--status-bad-fill);
   color: var(--status-bad-text);
@@ -1046,6 +1105,15 @@ table textarea {
   margin-top: 8px;
 }
 
+/* A page's one-paragraph description right under its title (Import, IOUs,
+   Help, ...): equal room above and below, so it sits between the title and
+   the page's first card instead of hugging the card */
+h1 + .caption {
+  margin-top: 0;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
 /* Help page */
 .field-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1055,12 +1123,156 @@ table textarea {
   border-radius: 5px;
 }
 
-/* Help: Expand all / Collapse all, above the sections */
+/* Help: search box, then Expand all / Collapse all, above the sections */
 .help-toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  margin: -4px 0 14px;
+  margin: 12px 0 16px;
+}
+
+.help-search {
+  position: relative;
+  flex: 1;
+  max-width: 600px;
+  margin-right: auto;
+}
+
+/* appearance: none — Safari otherwise draws its own rounded search field
+   and ignores padding/border */
+.help-search input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.18);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.help-search input[type="search"]:focus {
+  outline: none;
+  border-color: rgba(54, 118, 173, 0.6);
+  box-shadow: 0 0 0 3px rgba(54, 118, 173, 0.15);
+}
+
+/* Drops down over the page instead of pushing it down */
+.help-search-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 30;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid rgba(20, 20, 18, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.help-search-results[hidden] {
+  display: none;
+}
+
+.help-search-results li {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(20, 20, 18, 0.06);
+  cursor: pointer;
+}
+
+.help-search-results li:last-child {
+  border-bottom: none;
+}
+
+.help-search-results li.active,
+.help-search-results li:hover {
+  background: #eef4fa;
+}
+
+.help-result-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.help-result-where {
+  color: #6b6b70;
+  font-weight: 400;
+}
+
+.help-result-snippet {
+  font-size: 12.5px;
+  color: #48484a;
+  margin-top: 2px;
+}
+
+.help-search-results mark {
+  background: #ffe8a3;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.help-search-results li.help-search-note {
+  font-size: 12px;
+  color: #6b6b70;
+  cursor: default;
+  background: none;
+}
+
+.help-body .help-flash-topic {
+  background: #ffe8a3;
+  border-radius: 3px;
+  transition: background 1.2s ease;
+}
+
+/* CDs & Bonds: Add interest form + folded Interest entries list */
+.cd-interest {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(20, 20, 18, 0.08);
+}
+
+.cd-interest h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.cd-interest-entries {
+  margin-top: 10px;
+}
+
+.cd-interest-entries summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #48484a;
+  margin-bottom: 8px;
+}
+
+/* Transactions: "Pass-through to finish" reminder banner */
+.tx-reminder {
+  background: #fff6dc;
+  border: 1px solid #f0d98a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tx-reminder-links {
+  white-space: nowrap;
+  margin-left: 6px;
 }
 
 /* "General" / "By page" labels between the two groups of sections */

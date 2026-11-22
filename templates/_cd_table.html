@@ -1,7 +1,8 @@
 {# Editable "CDs & Bonds" table (the cds table, typed by `kind`), shared by
    Net Worth (all of them) and Investments (each account's own). Both write through /api/cds/update and /api/cds/delete,
    so an edit on either page shows on the other. Each copy is its own
-   [data-cd-section] with its own Save / Discard / Delete buttons. #}
+   [data-cd-section] with its own Save / Discard / Delete buttons, its own
+   Add interest form and Interest entries list (/api/cds/interest/*). #}
 {% macro cd_controls(position) %}
   <div class="save-controls cd-controls-{{ position }}">
     <button class="btn btn-secondary" data-cd-delete-btn disabled>Delete selected</button>
@@ -19,7 +20,8 @@
     <tr>
       <th><input type="checkbox" data-cd-select-all title="Select all rows"></th>
       <th>Type</th><th>Institution</th><th>Account</th><th class="num">Principal</th>
-      {% if show_balance %}<th class="num" title="The linked account's balance — not edited here">Current Balance</th>{% endif %}
+      {% if show_balance %}<th class="num">Current Balance
+        <span class="info-tip" tabindex="0" data-tip="This CD or bond on its own: principal + the interest you've logged for it (Add interest, below). Just the principal until you log some.">i</span></th>{% endif %}
       <th class="num" title="APY for a CD, coupon or yield for a bond">Rate / Yield %</th>
       <th>Opened</th><th>Maturity</th><th>Note</th>
     </tr>
@@ -39,7 +41,8 @@
         </select>
       </td>
       <td class="num"><input type="text" class="num" data-cd-field="principal" data-cd-id="{{ cd.id }}" value="{{ fmt_num(cd.principal) }}"></td>
-      {% if show_balance %}<td class="num">{{ fmt_money(cd.current_balance) if cd.current_balance is not none else '—' }}</td>{% endif %}
+      {% if show_balance %}<td class="num">{{ fmt_money(cd.current_balance) }}
+        {% if cd.interest %}<div class="caption">+ {{ fmt_money(cd.interest_total) }} interest</div>{% endif %}</td>{% endif %}
       <td class="num"><input type="text" class="num" data-cd-field="apy" data-cd-id="{{ cd.id }}" value="{{ '%.2f'|format(cd.apy) if cd.apy is not none else '' }}" placeholder="—"></td>
       <td><input type="date" data-cd-field="opened_date" data-cd-id="{{ cd.id }}" value="{{ cd.opened_date or '' }}"></td>
       <td><input type="date" data-cd-field="maturity_date" data-cd-id="{{ cd.id }}" value="{{ cd.maturity_date or '' }}"></td>
@@ -47,11 +50,51 @@
     </tr>
     {% endfor %}
     <tr class="nw-total-row">
-      <td colspan="4">Total Principal</td>
+      <td colspan="4">Total</td>
       <td class="num">{{ fmt_money(total_principal) }}</td>
-      <td colspan="{{ 5 if show_balance else 4 }}"></td>
+      {% if show_balance %}<td class="num">{{ fmt_money(cd_list|sum(attribute='current_balance')) }}</td>{% endif %}
+      <td colspan="4"></td>
     </tr>
   </table>
   {% if not controls_top %}{{ cd_controls('bottom') }}{% endif %}
+
+  {% if cd_list %}
+  <div class="cd-interest">
+    <h4>Add interest</h4>
+    <form class="filters" data-cd-interest-form>
+      <select name="cd_id" required>
+        {% if cd_list|length > 1 %}<option value="" disabled selected>Which CD / bond</option>{% endif %}
+        {% for cd in cd_list %}
+        <option value="{{ cd.id }}">{{ cd.institution }} · {{ cd.kind }} · {{ fmt_money(cd.principal) }}{{ ' · matures ' ~ cd.maturity_date if cd.maturity_date }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="date" required>
+      <input type="text" name="amount" placeholder="Interest amount" required autocomplete="off" inputmode="decimal" style="min-width:120px">
+      <input type="text" name="note" placeholder="Note (optional)" style="min-width:160px">
+      <button type="submit" class="btn btn-primary">Add interest</button>
+    </form>
+    {% set entry_count = cd_list|map(attribute='interest')|map('length')|sum %}
+    {% if entry_count %}
+    <details class="cd-interest-entries">
+      <summary>Interest entries ({{ entry_count }})</summary>
+      <table class="nw-table">
+        <tr><th></th><th>Date</th><th>CD / bond</th><th class="num">Amount</th><th>Note</th></tr>
+        {% for cd in cd_list %}{% for e in cd.interest %}
+        <tr>
+          <td><input type="checkbox" data-cd-interest-id="{{ e.id }}" title="Select this entry"></td>
+          <td class="ledger-date">{{ e.date }}</td>
+          <td>{{ cd.institution }} · {{ cd.kind }}</td>
+          <td class="num">{{ fmt_money(e.amount) }}</td>
+          <td>{{ e.note or '' }}</td>
+        </tr>
+        {% endfor %}{% endfor %}
+      </table>
+      <div class="save-controls">
+        <button class="btn btn-secondary" data-cd-interest-delete disabled>Delete selected</button>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endmacro %}

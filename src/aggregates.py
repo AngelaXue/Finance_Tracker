@@ -4,6 +4,7 @@ route handlers thin: fetch via these, render template."""
 import calendar
 from datetime import date, timedelta
 
+from src import fx
 from src.fx import to_base
 
 LIABILITY_TYPES = ("credit_card", "loan")
@@ -407,24 +408,53 @@ def net_worth_trend(conn, start=None, end=None, include_investments=True):
     return trend
 
 
+def currencies_in_use(conn):
+    """Currencies of active accounts, base currency included. More than one
+    → multi-currency mode: pages show per-currency tables, currency codes
+    and conversion notes (the MULTI_CURRENCY template flag). With one they
+    stay hidden, since most people never need them."""
+    used = {r["currency"] for r in conn.execute("SELECT DISTINCT currency FROM accounts WHERE is_active = 1")}
+    return sorted(used | {fx.BASE_CURRENCY})
+
+
 def balances_by_currency(conn):
+    """Asset balances (credit cards and loans left out) of active
+    self/joint accounts: per account, per currency, and combined in the base
+    currency. Overview shows `accounts` with one currency, `by_currency`
+    with several."""
     accounts = conn.execute(
-        "SELECT id, currency FROM accounts WHERE is_active = 1 AND account_type NOT IN ('credit_card', 'loan') "
-        "AND owner IN ('self', 'joint')"
+        "SELECT id, name, currency FROM accounts WHERE is_active = 1 AND account_type NOT IN ('credit_card', 'loan') "
+        "AND owner IN ('self', 'joint') ORDER BY name"
     ).fetchall()
     totals = {}
+    per_account = []
     for acct in accounts:
         row = latest_balance(conn, acct["id"])
         if not row:
             continue
         totals[acct["currency"]] = totals.get(acct["currency"], 0.0) + row["balance"]
+        per_account.append(dict(name=acct["name"], currency=acct["currency"], balance=row["balance"]))
     combined_base = sum(to_base(amount, currency) for currency, amount in totals.items())
-    return dict(by_currency=totals, combined_base=combined_base)
+    return dict(by_currency=totals, accounts=per_account, combined_base=combined_base)
 
 
 # Matches "Pass-Through", "pass through", "Passthrough", ... — the one place
 # a category name changes what's counted (see CLAUDE.md's /spending notes).
 _PASS_THROUGH_SQL = "LOWER(REPLACE(REPLACE(COALESCE(category, ''), '-', ''), ' ', '')) = 'passthrough'"
+
+# Pass-through that's only half set up: Category Pass-Through (so Spending
+# hides it) but still Mine, so Cash Flow counts it as both income and
+# spending — inflating income and lowering the savings rate. Marking it Not
+# Mine finishes it. Needs `t` = transactions. Feeds the Transactions
+# banner and its "Pass-through to finish" filter.
+PASS_THROUGH_TODO_SQL = (
+    "t.transaction_type IN ('income', 'expense') AND t.attributable_to_user = 1 "
+    f"AND {_PASS_THROUGH_SQL.replace('category', 't.category')}"
+)
+
+
+def pass_through_todo_count(conn):
+    return conn.execute(f"SELECT COUNT(*) FROM transactions t WHERE {PASS_THROUGH_TODO_SQL}").fetchone()[0]
 
 
 def spending_by_category(conn, start, end, include_pass_through=False):
@@ -566,29 +596,37 @@ def investment_allocation(conn):
 
 
 def list_cds(conn):
-    """Every recorded CD or bond, joined with its linked account's name and
-    current balance — a detail/memo view only. `current_balance` is
-    whatever that account is worth right now via the normal
-    latest_balance() pipeline (already counted once in Net Worth through
-    that account); `total_principal` is an informational sum of what was
-    originally put into each CD, never itself added into Net Worth."""
+    """Every recorded CD or bond with its linked account's name — a
+    detail/memo view only, never added into Net Worth (the money is already
+    counted once through that account). Each one's `current_balance` is its
+    own: principal + the interest logged for it (`cd_interest`), so just the
+    principal until any is logged. (It is deliberately not the linked
+    account's balance: for a CD held inside a brokerage or retirement
+    account that would be the whole account, not the CD.) `interest` lists
+    its entries, newest first."""
     rows = conn.execute(
         "SELECT c.*, a.name AS account_name FROM cds c "
         "JOIN accounts a ON a.id = c.account_id "
         "ORDER BY c.maturity_date IS NULL, c.maturity_date ASC"
     ).fetchall()
+    entries = {}
+    for e in conn.execute("SELECT * FROM cd_interest ORDER BY date DESC, id DESC").fetchall():
+        entries.setdefault(e["cd_id"], []).append(dict(e))
     result = []
-    total_principal = 0.0
+    total_principal = total_balance = 0.0
     for r in rows:
-        balance_row = latest_balance(conn, r["account_id"])
+        interest = entries.get(r["id"], [])
+        interest_total = round(sum(e["amount"] for e in interest), 2)
+        current = round(r["principal"] + interest_total, 2)
         result.append(dict(
             id=r["id"], institution=r["institution"], account_name=r["account_name"],
             account_id=r["account_id"], principal=r["principal"], apy=r["apy"],
             opened_date=r["opened_date"], maturity_date=r["maturity_date"], note=r["note"],
-            kind=r["kind"], current_balance=balance_row["balance"] if balance_row else None,
+            kind=r["kind"], current_balance=current, interest_total=interest_total, interest=interest,
         ))
         total_principal += r["principal"]
-    return dict(cds=result, total_principal=total_principal)
+        total_balance += current
+    return dict(cds=result, total_principal=total_principal, total_balance=round(total_balance, 2))
 
 
 def investment_entries(conn, contributions=None):
@@ -809,6 +847,8 @@ def fetch_transactions(conn, year=None, month=None, account_id=None, category=No
         params.append(category)
     if review == "needs_review":
         query += " AND t.category_predicted = 1"
+    elif review == "pass_through":
+        query += f" AND ({PASS_THROUGH_TODO_SQL})"
     if attributable in ("0", "1"):
         query += " AND t.attributable_to_user = ?"
         params.append(attributable)

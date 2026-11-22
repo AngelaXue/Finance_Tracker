@@ -44,15 +44,34 @@
   {{ period_selector(nw_period, [('all','All'), ('3mo','3M'), ('6mo','6M'), ('1yr','1Y'), ('5yr','5Y')], 'nw_', nw_min_date|default('')) }}
 </div>
 
+{# One currency (most people): plain per-account balances. A second currency
+   in use (MULTI_CURRENCY) switches this to totals per currency + a
+   converted combined line. #}
 <div class="card">
+  {% if MULTI_CURRENCY %}
   <h2>Balances by Currency</h2>
   <table>
     <tr><th>Currency</th><th>Total</th></tr>
     {% for currency, amount in currency_balances.by_currency.items() %}
-    <tr><td>{{ currency }}</td><td>{{ fmt_num(amount) }}</td></tr>
+    <tr><td>{{ currency }}</td><td>{{ fmt_money(amount, currency_symbol(currency)) }}</td></tr>
     {% endfor %}
     <tr class="subtotal"><td>Combined ({{ BASE_CURRENCY }})</td><td>{{ fmt_money(currency_balances.combined_base) }}</td></tr>
   </table>
+  {% else %}
+  <h2>Balances</h2>
+  {% if currency_balances.accounts %}
+  <table>
+    <tr><th>Account</th><th>Balance</th></tr>
+    {% for a in currency_balances.accounts %}
+    <tr><td>{{ a.name }}</td><td class="{{ 'amount-negative' if a.balance < 0 }}">{{ fmt_money(a.balance) }}</td></tr>
+    {% endfor %}
+    <tr class="subtotal"><td>Total</td><td>{{ fmt_money(currency_balances.combined_base) }}</td></tr>
+  </table>
+  <p class="caption">What your accounts hold (cards and loans are under Debts below).</p>
+  {% else %}
+  <p class="caption">No balances yet.</p>
+  {% endif %}
+  {% endif %}
 </div>
 
 <div class="card">

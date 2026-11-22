@@ -6,6 +6,21 @@
 
 {{ period_selector(period, [('month','This Month'), ('all','All')], '', min_date|default('')) }}
 
+{# Reminder for half-finished pass-through (aggregates.PASS_THROUGH_TODO_SQL).
+   Counts every date, not just the period shown; disappears on its own once
+   each row is marked Not Mine. #}
+{% if pass_through_todo %}
+<div class="tx-reminder" data-pass-through-reminder>
+  <strong>{{ pass_through_todo }} Pass-Through transaction{{ 's are' if pass_through_todo != 1 else ' is' }} still
+    marked Mine</strong>, so Cash Flow counts {{ 'them' if pass_through_todo != 1 else 'it' }} as your own income and
+  spending. Check {{ 'them' if pass_through_todo != 1 else 'it' }} and click <strong>Mark Not Mine</strong>.
+  <span class="tx-reminder-links">
+    {% if filters.review != 'pass_through' %}<a href="{{ url_for('transactions', review='pass_through', period='all') }}">Show them</a> ·{% endif %}
+    <a href="{{ url_for('help_page') }}#pass-through">Why?</a>
+  </span>
+</div>
+{% endif %}
+
 <div class="filters-row">
   <form class="filters" method="get">
     {% if period.preset %}<input type="hidden" name="period" value="{{ period.preset }}">{% endif %}
@@ -39,6 +54,7 @@
     <select name="review">
       <option value="">All rows</option>
       <option value="needs_review" {{ 'selected' if filters.review == 'needs_review' }}>Needs Review ({{ needs_review_count }})</option>
+      <option value="pass_through" {{ 'selected' if filters.review == 'pass_through' }}>Pass-through to finish ({{ pass_through_todo }})</option>
     </select>
     <select name="attributable">
       <option value="">Mine + Not Mine</option>
@@ -132,7 +148,7 @@
           </td>
           <td>
             <input type="text" data-field="amount" data-id="{{ t.id }}" value="{{ fmt_num(t.amount) }}"
-                   class="{{ 'amount-positive' if t.amount >= 0 else 'amount-negative' }}"> {{ t.currency }}
+                   class="{{ 'amount-positive' if t.amount >= 0 else 'amount-negative' }}">{% if MULTI_CURRENCY %} {{ t.currency }}{% endif %}
           </td>
           <td>{{ fmt_num(running_balances.get(t.id, 0)) }}</td>
           <td>

@@ -16,7 +16,8 @@
 {% for table in tables %}
 {% if table.has_rows or table.currency == BASE_CURRENCY %}
 <div class="card">
-  <h2>{{ table.label }} <span class="caption">(in {{ table.currency }})</span></h2>
+  {% if MULTI_CURRENCY %}<h2>{{ table.label }} <span class="caption">(in {{ table.currency }})</span></h2>
+  {% else %}<h2>Accounts</h2>{% endif %}
   {% if table.has_rows %}
   <table class="nw-table">
     <colgroup>
@@ -47,7 +48,7 @@
       {% endif %}
     {% endfor %}
     <tr class="nw-total-row">
-      <td colspan="2">Total ({{ table.currency }})</td>
+      <td colspan="2">Total{% if MULTI_CURRENCY %} ({{ table.currency }}){% endif %}</td>
       <td class="num {{ 'amount-negative' if table.total < 0 else '' }}">{{ fmt_money(table.total, table.symbol) }}</td>
       <td></td>
     </tr>
@@ -61,7 +62,7 @@
 {% endfor %}
 
 <div class="card">
-  <div class="stat-label">Net Worth (all accounts, in {{ BASE_CURRENCY }})</div>
+  <div class="stat-label">Net Worth (all accounts{% if MULTI_CURRENCY %}, in {{ BASE_CURRENCY }}{% endif %})</div>
   <div class="stat-value {{ 'stat-bad' if breakdown.net_worth < 0 else '' }}">{{ fmt_money(breakdown.net_worth) }}</div>
   {% if rates_used %}
   <p class="caption">Each table above stays in its own currency; only this line converts, using the rates stored in
@@ -112,9 +113,9 @@
   {% if cds.cds %}
   {% from "_cd_table.html" import cd_table with context %}
   {{ cd_table(cds.cds, cds.total_principal, cd_accounts) }}
-  <p class="caption">Click any cell to edit it, then Save. <strong>Current Balance</strong> isn't editable — it's the
-    linked account's balance (so it's the whole account if it holds other money too). Ones held in an investment
-    account also show — and can be edited — on the Investments page.</p>
+  <p class="caption">Click any cell to edit it, then Save. <strong>Current Balance</strong> is each one's own:
+    principal + the interest you've logged with <strong>Add interest</strong> (just the principal until then). Ones held
+    in an investment account also show — and can be edited — on the Investments page.</p>
   {% else %}
   <p class="caption">No CDs or bonds recorded yet — add one below.</p>
   {% endif %}
@@ -176,7 +177,9 @@
       <option value="" disabled selected>Type</option>
       {% for t in account_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
     </select>
-    <select name="currency" title="The account's own currency">
+    {# With one currency in use the picker hides behind "Other currency?";
+       the select still submits the base currency #}
+    <select name="currency" title="The account's own currency" data-currency-select {{ 'hidden' if not MULTI_CURRENCY }}>
       {% for c in currencies %}<option value="{{ c }}" {{ 'selected' if c == BASE_CURRENCY }}>{{ c }}</option>{% endfor %}
     </select>
     <select name="owner" title="Who the account belongs to" data-owner-select>
@@ -189,6 +192,8 @@
     <input type="text" name="starting_balance" placeholder="Starting balance (optional)" style="min-width:170px">
     <input type="date" name="balance_date" title="Starting balance as of this date">
     <button type="submit" class="btn btn-primary">Create</button>
+    {% if not MULTI_CURRENCY %}<button type="button" class="btn-link" data-currency-reveal
+      title="For an account held in another currency">Other currency?</button>{% endif %}
   </form>
   <datalist id="iou-people">{% for p in people %}<option value="{{ p }}">{% endfor %}</datalist>
   <ul class="caption ledger-tips">
@@ -206,6 +211,10 @@
     <li><strong>Cash</strong> and <strong>digital_wallet</strong> don't take a starting balance — their balance is
       the sum of their transactions, so log the opening amount as a transaction instead.</li>
     <li>Brokerage/retirement: leave it blank and add snapshots on the Investments page.</li>
+    <li><strong>Currency</strong> — accounts are in {{ BASE_CURRENCY }} unless you pick another
+      {%- if not MULTI_CURRENCY %} with <strong>Other currency?</strong>{% endif %}. Once any account uses a second
+      currency, the app shows one table per currency, currency codes on amounts, and the exchange rates used — see
+      <a href="{{ url_for('help_page') }}#currencies">Currencies</a>.</li>
     <li>After creating it, the account name works on the Transactions page right away (and shows up in the Account
       suggestions).</li>
   </ul>

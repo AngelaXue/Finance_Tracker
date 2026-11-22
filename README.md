@@ -215,6 +215,10 @@ previous period. Rows whose category is **Pass-Through** (any spelling) are hidd
 and went straight back out, like a work reimbursement — with a switch to include them. This is the one place a
 category name changes the math.
 
+Cash Flow doesn't read the category, so a pass-through row also needs **Mark Not Mine**; otherwise it counts as your
+own income and spending (inflating income, lowering the savings rate). Until that's done, Transactions shows a yellow
+reminder and its review filter offers **Pass-through to finish**.
+
 ### Investments: principal, value, growth
 
 For each brokerage/retirement account:
@@ -281,6 +285,12 @@ importing the very same file twice adds a flagged second copy of everything.
 
 ### Currencies
 
+**It's automatic.** While all your accounts are in the base currency, the app hides everything currency-related: no
+currency codes, no per-currency tables, no exchange rates. Overview shows plain **Balances**. As soon as any account
+uses a second currency (Net Worth → Add Account → **Other currency?**), the pages switch on their own: Overview shows
+**Balances by Currency**, Net Worth gets one table per currency plus the rates used, and amounts carry their currency
+code. Nothing to configure.
+
 Each account has its own currency, and its balances are always shown in it — Net Worth has one table per currency.
 Totals that must combine currencies (the Net Worth figure, Cash Flow, Spending, IOUs) are converted to the **base
 currency** (USD by default) with fixed rates in `src/fx.py`. Rates are edited by hand, never fetched; the ones
@@ -293,15 +303,15 @@ change the base currency or add one.
 
 | Page | What it's for |
 |---|---|
-| **Overview** | Net worth (excluding investments) and its trend; balances by currency; debts, loans and IOU balances; where income went; top spending categories; a small Sankey. Shows a *Getting started* checklist until you have data. |
-| **Net Worth** | One table per currency, grouped Cash / Investments / Credit / Loans, with 30-day changes; the converted total; accounts someone else pays; **Set Balance**; the **CDs & Bonds** memo table; **Add Account**. |
+| **Overview** | Net worth (excluding investments) and its trend; account balances (by currency, once you have more than one); debts, loans and IOU balances; where income went; top spending categories; a small Sankey. Shows a *Getting started* checklist until you have data. |
+| **Net Worth** | Your accounts grouped Cash / Investments / Credit / Loans, with 30-day changes (one table per currency, plus the converted total, once you use more than one); accounts someone else pays; **Set Balance**; the **CDs & Bonds** memo table (each one's balance = principal + interest you log with **Add interest**); **Add Account**. |
 | **Cash Flow** | Inflow, Living Expenses, Saved + Invested, Savings Rate, and the Sankey diagram for a period. |
 | **Spending** | Category bars with share and change vs. the previous period, a donut, per-category trend lines. Click a category to see its transactions. |
 | **Transactions** | Every transaction: filter, search, edit inline (then Save), add rows by hand, Mark Not Mine, the IOU menu, filtered and selected totals, duplicate and needs-review highlighting, **Suggest categories**. |
 | **Import** | Add statement files to an account, Preview, Import; optional older-history import. |
 | **Investments** | Value, principal and growth per investment account with charts; deposits that need sorting out; **Add a Snapshot**; all entries, editable. |
 | **IOUs** | One card per person with their balance; their *They paid* / *I paid* entries side by side; manual entries and starting balances. |
-| **Help** | The rules, FAQ style, in the app. |
+| **Help** | The rules, FAQ style, in the app, with a search box (typos and related words welcome; press `/`). |
 
 Most pages have a period selector (This Month by default, 3/6 months, a year, or a custom month range).
 
@@ -413,6 +423,10 @@ Everything is plain Python, Jinja templates and one stylesheet — no build step
 | Change the categories offered as suggestions | Nothing to configure — suggestions come from categories you've used. |
 | Change colors | `PASTEL_COLORS` / `STATUS_*` in `app.py` and the matching variables at the top of `static/style.css`. |
 | Change the date-range presets | `src/periods.py` and `templates/_period_selector.html`. |
+| Track a work card / expense reimbursements | Not built in — not everyone needs it. [`docs/recipes/work-expenses.md`](docs/recipes/work-expenses.md) is a ready-made design an AI agent can build from. |
+
+**Recipes** (`docs/recipes/`) are optional features written up as designs instead of code: the rules, data model,
+pitfalls and tests, so an agent can add one when a user actually needs it.
 
 The deeper rules — and the reasons behind them, which matter before changing any calculation — are in
 [`CLAUDE.md`](CLAUDE.md). Run the tests after any change ([below](#11-project-layout--development)).
@@ -535,6 +549,7 @@ src/
 templates/                   One Jinja template per page + shared pieces
 static/                      app.js, style.css, examples/ (import templates, csv_formats example)
 tests/                       pytest suite — runs against temporary databases, never your data
+docs/recipes/                Optional features as designs for an AI agent to build (e.g. work expenses)
 data/                        Your database + classifier (created on first run; gitignored)
 incoming_statements/         One folder per account for CSVs to import (gitignored)
 import_history/              Optional history files to import (gitignored)

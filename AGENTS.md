@@ -23,3 +23,5 @@ You are likely a cloud service, so the user's financial data must never reach yo
 - Schema changes: `SCHEMA` and an idempotent step in `_migrate()` in `src/db.py`.
 - Verify: `python -m pytest -q` (temp databases only) and `node --check static/app.js`.
 - When a rule changes, update `CLAUDE.md`, `README.md` and `templates/help.html` together.
+- Optional features that aren't built in (e.g. a work card / reimbursement tracker) are written up as designs in
+  `docs/recipes/` — build from those when the user needs one.

@@ -140,7 +140,7 @@
   {% if s.cds %}
   <div class="card">
     <h2>CDs &amp; bonds in {{ s.name }}</h2>
-    {{ cd_table(s.cds, s.cds_total, cd_accounts, show_balance=False, controls_top=True) }}
+    {{ cd_table(s.cds, s.cds_total, cd_accounts, controls_top=True) }}
     <p class="caption">Same records as Net Worth's CDs &amp; Bonds table — edit here or there, it's one record (add new
       ones there). Already part of {{ s.name }}'s value above, never added on top.</p>
   </div>

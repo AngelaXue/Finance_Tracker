@@ -135,10 +135,25 @@ def inject_palette():
     )
 
 
+def _multi_currency():
+    """True once any active account uses a currency other than the base
+    one. Until then every currency-specific piece of the UI (per-currency
+    tables, currency codes, conversion notes, the Add Account currency
+    picker) stays out of the way; it appears by itself after that."""
+    try:
+        conn = get_connection()
+        try:
+            return len(aggregates.currencies_in_use(conn)) > 1
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
 @app.context_processor
 def inject_settings():
     return dict(BASE_CURRENCY=fx.BASE_CURRENCY, BASE_SYMBOL=fx.BASE_SYMBOL, currency_symbol=fx.symbol,
-                DEMO=paths.DEMO)
+                DEMO=paths.DEMO, MULTI_CURRENCY=_multi_currency())
 
 
 def _merge_query(overrides: dict) -> str:
@@ -160,6 +175,7 @@ def _fmt_money(value, symbol=None):
     """-1234.5 → '-$1,234.50' (symbol defaults to the base currency's)."""
     sign = "-" if value < 0 else ""
     return f"{sign}{fx.BASE_SYMBOL if symbol is None else symbol}{abs(value):,.2f}"
+
 
 
 def _fmt_num(value):
@@ -578,11 +594,13 @@ def transactions():
     needs_review_count = conn.execute(
         "SELECT COUNT(*) AS c FROM transactions WHERE category_predicted = 1"
     ).fetchone()["c"]
+    pass_through_todo = aggregates.pass_through_todo_count(conn)
     people = aggregates.iou_people(conn)
 
     conn.close()
     return render_template(
         "transactions.html",
+        pass_through_todo=pass_through_todo,
         rows=rows,
         filtered_total=filtered_total,
         running_balances=running_balances,
@@ -1239,8 +1257,47 @@ def delete_cds():
     conn = get_connection()
     deleted = 0
     for cd_id in ids:
+        conn.execute("DELETE FROM cd_interest WHERE cd_id = ?", (cd_id,))
         cursor = conn.execute("DELETE FROM cds WHERE id = ?", (cd_id,))
         deleted += cursor.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, deleted=deleted)
+
+
+@app.route("/api/cds/interest/add", methods=["POST"])
+def add_cd_interest():
+    """Logs interest earned on one CD/bond — {cd_id, date, amount, note?}.
+    Its current balance becomes principal + all its interest. A negative
+    amount is allowed (a correction); zero isn't."""
+    payload = request.get_json(silent=True) or {}
+    cd_id = payload.get("cd_id")
+    date_val = _iso_date(payload.get("date"))
+    if not date_val:
+        return _fail("a date (YYYY-MM-DD) is required")
+    try:
+        amount = _money(payload.get("amount"))
+    except (TypeError, ValueError):
+        return _fail("amount must be a number")
+    if amount == 0:
+        return _fail("amount must be non-zero")
+    conn = get_connection()
+    if not isinstance(cd_id, int) or not conn.execute("SELECT 1 FROM cds WHERE id = ?", (cd_id,)).fetchone():
+        return _fail("pick which CD or bond it's for", conn)
+    conn.execute("INSERT INTO cd_interest (cd_id, date, amount, note) VALUES (?,?,?,?)",
+                 (cd_id, date_val, amount, _clean_note(payload.get("note"))))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True)
+
+
+@app.route("/api/cds/interest/delete", methods=["POST"])
+def delete_cd_interest():
+    ids = [i for i in (request.get_json(silent=True) or {}).get("ids") or [] if isinstance(i, int)]
+    if not ids:
+        return _fail("nothing selected")
+    conn = get_connection()
+    deleted = sum(conn.execute("DELETE FROM cd_interest WHERE id = ?", (i,)).rowcount for i in ids)
     conn.commit()
     conn.close()
     return jsonify(success=True, deleted=deleted)

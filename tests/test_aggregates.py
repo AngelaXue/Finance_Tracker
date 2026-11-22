@@ -312,12 +312,12 @@ def test_list_cds_for_a_cd_nested_inside_a_retirement_account_is_display_only(co
     ira = _insert_account(conn, "Roth IRA", "retirement", owner="self")
     _insert_balance(conn, ira, "2026-01-01", 12000.0)
     conn.execute(
-        "INSERT INTO cds (account_id, institution, principal) VALUES (?, 'Fidelity', 3000.0)",
+        "INSERT INTO cds (account_id, institution, principal) VALUES (?, 'Bank A', 3000.0)",
         (ira,),
     )
 
     result = aggregates.list_cds(conn)
-    assert result["cds"][0]["current_balance"] == 12000.0  # the whole IRA, not just the CD's slice
+    assert result["cds"][0]["current_balance"] == 3000.0  # the CD's own, not the whole IRA
     assert result["total_principal"] == 3000.0
 
     breakdown = aggregates.net_worth_breakdown(conn)
@@ -475,3 +475,45 @@ def test_iou_settlement_marks_never_change_the_balance(conn):
     ledger = aggregates.iou_ledgers(conn)[0]
     assert ledger["balance"] == before
     assert ledger["they_paid_marks"] == {"pending": 0.0, "settled": 100.0, "unmarked": 0.0}
+
+
+def test_list_cds_current_balance_is_principal_plus_logged_interest(conn):
+    ira = _insert_account(conn, "Retirement", "retirement", owner="self")
+    _insert_balance(conn, ira, "2026-01-01", 12000.0)
+    conn.execute("INSERT INTO cds (account_id, institution, principal) VALUES (?, 'Bank A', 3000.0)", (ira,))
+    conn.execute("INSERT INTO cds (account_id, institution, principal) VALUES (?, 'Bank B', 1000.0)", (ira,))
+    first, second = [r["id"] for r in conn.execute("SELECT id FROM cds ORDER BY id")]
+    conn.execute("INSERT INTO cd_interest (cd_id, date, amount) VALUES (?, '2026-02-01', 12.5)", (first,))
+    conn.execute("INSERT INTO cd_interest (cd_id, date, amount, note) VALUES (?, '2026-03-01', 13.0, 'Mar')", (first,))
+    conn.commit()
+
+    by_id = {cd["id"]: cd for cd in aggregates.list_cds(conn)["cds"]}
+    # Its own balance, not the whole retirement account's
+    assert (by_id[first]["current_balance"], by_id[first]["interest_total"]) == (3025.5, 25.5)
+    assert [e["date"] for e in by_id[first]["interest"]] == ["2026-03-01", "2026-02-01"]  # newest first
+    assert (by_id[second]["current_balance"], by_id[second]["interest"]) == (1000.0, [])
+    assert aggregates.list_cds(conn)["total_balance"] == 4025.5
+    assert aggregates.net_worth_breakdown(conn)["net_worth"] == 12000.0  # still memo only
+
+
+def test_pass_through_todo_counts_only_pass_through_still_marked_mine(conn):
+    checking = _insert_account(conn, "Checking", "checking")
+    rows = [
+        # (amount, category, type, mine) → counted?
+        (-7.0, "Pass Through", "expense", 1),       # yes: half done
+        (120.0, "pass-through", "income", 1),       # yes: any spelling
+        (-12.0, "Pass-Through", "expense", 0),      # no: finished
+        (-13.0, "Travel", "expense", 1),            # no: not pass-through
+        (-15.0, "Pass-Through", "personal_transfer", 1),  # no: a transfer never counts anyway
+        (-16.0, None, "expense", 1),                # no
+    ]
+    for i, (amount, cat, ttype, mine) in enumerate(rows):
+        conn.execute(
+            "INSERT INTO transactions (account_id, date, amount, currency, category, transaction_type, description, "
+            "source, dedup_hash, attributable_to_user) VALUES (?, '2026-01-01', ?, 'USD', ?, ?, 'x', 'manual', ?, ?)",
+            (checking, amount, cat, ttype, f"h{i}", mine),
+        )
+    conn.commit()
+    assert aggregates.pass_through_todo_count(conn) == 2
+    shown = {r["amount"] for r in aggregates.fetch_transactions(conn, review="pass_through")}
+    assert shown == {-7.0, 120.0}

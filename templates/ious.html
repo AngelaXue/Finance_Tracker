@@ -90,7 +90,7 @@
   <div class="stat-value">{{ balance_text(selected.balance) }}</div>
   <p class="caption">= what they paid ({{ fmt_money(selected.they_paid_total) }}) − what you paid
     ({{ fmt_money(selected.i_paid_total) }}){% if selected.starting_balance_date %}, counting from the starting
-    balance on {{ selected.starting_balance_date }}{% endif %}. In {{ BASE_CURRENCY }}.</p>
+    balance on {{ selected.starting_balance_date }}{% endif %}.{% if MULTI_CURRENCY %} In {{ BASE_CURRENCY }}.{% endif %}</p>
 </div>
 
 <div class="ledger-split">
@@ -128,7 +128,7 @@
       <option value="i_paid">I paid (they owe you more / you paid them back)</option>
       <option value="starting_balance">Starting balance</option>
     </select>
-    <input type="text" name="amount" placeholder="Amount ({{ BASE_CURRENCY }})" required style="min-width:110px"
+    <input type="text" name="amount" placeholder="Amount{% if MULTI_CURRENCY %} ({{ BASE_CURRENCY }}){% endif %}" required style="min-width:110px"
            autocomplete="off" inputmode="decimal">
     <button type="submit" class="btn btn-primary">Add</button>
   </form>

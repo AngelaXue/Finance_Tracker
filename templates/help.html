@@ -11,6 +11,14 @@
    Transactions) opens the section holding its target — see initHelpPage
    in app.js. Sub-topic anchors (#logging, #duplicates, ...) live on h3s. #}
 <div class="help-toolbar">
+  {# Search runs in the browser only (initHelpSearch in app.js): word stems,
+     related words, typo-tolerant, ranked by topic. Press / to jump here. #}
+  <div class="help-search">
+    <input type="search" data-help-search autocomplete="off"
+           placeholder="Search help — try &quot;someone owes me&quot; or a question (press / )"
+           aria-label="Search help">
+    <ul class="help-search-results" data-help-results hidden></ul>
+  </div>
   <button type="button" class="btn btn-secondary" data-help-expand>Expand all</button>
   <button type="button" class="btn btn-secondary" data-help-collapse>Collapse all</button>
 </div>
@@ -124,10 +132,16 @@
     <strong>I paid</strong> with their name. When they pay you back, mark that row <strong>They paid</strong>.
     Their balance goes back to zero.</p>
 
-  <h3>Pass-through that comes in as income</h3>
+  <h3 id="pass-through">Pass-through that comes in as income</h3>
   <p>Work reimbursements (pay a work expense, get reimbursed, pay the bill) often arrive as ordinary
-    <span class="field-code">expense</span>/<span class="field-code">income</span>. Give those the category
-    <strong>Pass-Through</strong>; Spending hides them by default — see <a href="#spending">Spending</a>.</p>
+    <span class="field-code">expense</span>/<span class="field-code">income</span>. Two steps set each row up:</p>
+  <ol>
+    <li>Category <strong>Pass-Through</strong> — Spending hides it by default (see <a href="#spending">Spending</a>).</li>
+    <li><strong>Mark Not Mine</strong> — keeps it out of Cash Flow, so it doesn't inflate your income and lower your
+      savings rate.</li>
+  </ol>
+  <p>Transactions shows a yellow reminder while any Pass-Through row is still Mine, and the review filter has a
+    <strong>Pass-through to finish</strong> option listing them.</p>
   </div>
 </details>
 
@@ -176,6 +190,11 @@
     <span class="inv-chevron" aria-hidden="true"></span>
   </summary>
   <div class="help-body">
+  <p><strong>Automatic:</strong> while every account is in {{ BASE_CURRENCY }}, the app hides all of this — no currency
+    codes, no per-currency tables, no exchange rates. The moment any account uses a second currency (Net Worth → Add
+    Account → <strong>Other currency?</strong>), the pages switch on their own: Overview shows <strong>Balances by
+    Currency</strong>, Net Worth one table per currency plus the rates used, and amounts carry their currency code.
+    {% if MULTI_CURRENCY %}<em>(On now — you have accounts in more than one currency.)</em>{% endif %}</p>
   <ul>
     <li>Each account has its own currency, and its balances are always shown in it. Net Worth has one table per
       currency, never blended.</li>
@@ -282,8 +301,9 @@
 
   <h3>The rest of the page</h3>
   <ul>
-    <li><strong>Balances by currency</strong> — cash-type balances per currency, plus a combined
-      {{ BASE_CURRENCY }} line.</li>
+    <li><strong>Balances</strong> — what each account holds (cards and loans are under Debts). With accounts in
+      more than one currency it becomes <strong>Balances by Currency</strong>: a total per currency plus a combined
+      {{ BASE_CURRENCY }} line — see <a href="#currencies">Currencies</a>.</li>
     <li><strong>Money allocation</strong> and the small <strong>Sankey</strong> are the same numbers as
       <a href="#cash-flow">Cash Flow</a>.</li>
     <li><strong>Spending by category</strong> leaves out Pass-Through rows, like Spending does by default.</li>
@@ -301,9 +321,10 @@
   <div class="help-body"><span id="net-worth-adjustments"></span>
   <h3>The tables</h3>
   <ul>
-    <li>One table per currency, grouped into Cash / Investments / Credit / Loans, each totalled in its own
-      currency. Underneath, <strong>Net Worth (all accounts, in {{ BASE_CURRENCY }})</strong> is the one converted
-      number.</li>
+    <li>Your accounts, grouped into Cash / Investments / Credit / Loans, with a total. Underneath,
+      <strong>Net Worth (all accounts)</strong> is the headline number.</li>
+    <li>With accounts in more than one currency there's one table per currency, each totalled in its own currency,
+      and Net Worth becomes the one converted number (in {{ BASE_CURRENCY }}), with the rates used listed under it.</li>
     <li>Credit cards and loans show as negative (red), since they're money owed.</li>
     <li><strong>30-Day</strong> is the change since 30 days ago.</li>
   </ul>
@@ -339,8 +360,10 @@
       invalid value saves nothing.</li>
     <li>Ones held in an investment account also show — and can be edited — in that account's panel on
       Investments.</li>
-    <li><strong>Current Balance</strong> is the linked account's balance (the whole account, if it holds other money
-      too). The rate is never used to estimate interest.</li>
+    <li><strong>Current Balance</strong> is that CD or bond on its own: principal + the interest you've logged for it
+      with <strong>Add interest</strong> (below the table; a negative amount corrects a mistake). Just the principal
+      until you log some. The rate is never used to estimate interest.</li>
+    <li>Delete a wrong interest entry from the folded <strong>Interest entries</strong> list.</li>
   </ul>
   </div>
 </details>
@@ -353,7 +376,7 @@
   <div class="help-body">
   <ul>
     <li><strong>Inflow</strong> — every <span class="field-code">income</span> row in the period (not Not Mine),
-      converted to {{ BASE_CURRENCY }}, grouped by category.</li>
+      grouped by category{% if MULTI_CURRENCY %}, converted to {{ BASE_CURRENCY }}{% endif %}.</li>
     <li><strong>Living Expenses</strong> — every <span class="field-code">expense</span> row (not Not Mine), across
       all accounts, accounts someone else pays included.</li>
     <li><strong>Investing</strong> — every <span class="field-code">investment_contribution</span>.</li>
@@ -362,8 +385,8 @@
     <li><strong>Cash Savings</strong> = inflow minus all of the above, when positive. When you spent more than came
       in, the gap shows as <strong>From Savings</strong> on the left instead — the two sides always balance.</li>
     <li>Transfers between your own accounts and personal transfers never appear. Pass-through typed as
-      <span class="field-code">expense</span>/<span class="field-code">income</span> <em>is</em> counted here (usually
-      a wash, since it goes in and back out).</li>
+      <span class="field-code">expense</span>/<span class="field-code">income</span> <em>is</em> counted here unless
+      it's marked Not Mine — see <a href="#pass-through">pass-through</a>.</li>
     <li>Hover a link for its amount and its share of income.</li>
   </ul>
   </div>
